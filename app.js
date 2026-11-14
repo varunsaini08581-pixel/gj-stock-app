@@ -220,7 +220,9 @@ function stockCard(it) {
   <b>Source</b><span>${esc(it.source)}${it.dealer ? ' · ' + esc(it.dealer) : ''}</span><b>Dealer warranty</b><span>${w}</span>
   ${it.rate !== undefined ? `<b>Kharid</b><span>${money(it.rate)} ${it.po ? '· ' + esc(it.po) : ''} ${it.dealerBill ? '· bill ' + esc(it.dealerBill) : ''}</span>` : ''}
   ${it.soldBill ? `<b>Sold</b><span>${esc(it.soldBill)} · ${esc(it.soldDate)}</span>` : ''}
-  <b>Last scan</b><span>${esc(it.lastScan || '-')}</span>${it.notes ? `<b>Note</b><span>${esc(it.notes)}</span>` : ''}</div>
+  ${it.transitTo ? `<b>Raaste mein</b><span style="color:var(--warn)">${esc(it.transitBy)} ne ${esc(it.transitTo)} ko bheja (${esc(it.transitAt)}). Accept hone tak ${esc(it.transitBy)} ke naam.</span>` : ''}
+  <b>Pendrive scan</b><span>${esc(it.lastPendrive || 'kabhi nahi')}${it.battery ? ' · battery ' + esc(it.battery) : ''}${it.verified === 'N' ? ' · <b style="color:var(--bad)">verify nahi hua</b>' : ''}${it.hwPending ? ' · <b style="color:var(--bad)">part badla, approval pending</b>' : ''}</span>
+  <b>Sticker ginti</b><span>${esc(it.lastScan || '-')}</span>${it.notes ? `<b>Note</b><span>${esc(it.notes)}</span>` : ''}</div>
   <div class="btns">${actions.join('')}</div></div>`;
 }
 function partCard(p) {
@@ -233,6 +235,7 @@ async function statusDlg(id, loc) {
   <label>Naya status</label><select id="ns">${opts(L.status, '', 'Chuno')}</select>
   <label>Laptop kahan rahega</label><select id="nl">${opts(['Sales', 'Repair'], loc === 'Repair' ? 'Repair' : 'Sales')}</select>
   <label>Problem / note (Back to Repair pe zaroori)</label><input id="ni">
+  <p class="muted">Sales ↔ Repair: aap "bhejte" ho, lene wala apni pendrive se accept karega. Tab tak laptop aapke naam rahega.</p>
   <div class="btns"><button id="nb">Save</button><button class="sec" onclick="closeModal()">Cancel</button></div>`);
   $('nb').onclick = async () => { const r = await act($('nb'), 'stock.status', { id, status: val('ns'), location: val('nl'), issue: val('ni') }, 'Save ho gaya'); if (r.ok) { closeModal(); refreshLookup(id); } };
 }
@@ -241,16 +244,20 @@ async function outDlg(id) {
   const partners = L.dealers.map(d => d.name);
   modal(`<h2>${id}: bahar bhejo</h2><label>Kyun</label><select id="or">${opts(L.moveReasons, '', 'Chuno')}</select>
   <label>Kiske paas</label><select id="op">${opts(partners, '', 'Chuno')}</select>
-  <label>Kitne din mein wapas aana chahiye</label><input id="od" type="number" value="3" min="1" max="30">
+  <label>Courier / tracking no. ya le jaane wale ka naam (dealer wapsi mein zaroori)</label><input id="ot">
+  <p class="muted">Wapas aane ka time: lamination 1 din, bahar repair 3 din, dealer 7 din. Zimmedari bhejne wale ki.</p>
   <div class="btns"><button id="ob">Bahar bhejo</button><button class="sec" onclick="closeModal()">Cancel</button></div>`);
-  $('ob').onclick = async () => { const r = await act($('ob'), 'move.out', { id, reason: val('or'), partner: val('op'), days: val('od') }, 'Record ho gaya'); if (r.ok) { closeModal(); refreshLookup(id); } };
+  $('ob').onclick = async () => { const r = await act($('ob'), 'move.out', { id, reason: val('or'), partner: val('op'), tracking: val('ot') }, 'Record ho gaya'); if (r.ok) { closeModal(); refreshLookup(id); } };
 }
 async function moveIn(id) { const r = await act(null, 'move.in', { id }, 'Wapas aa gaya, repair mein check karo'); if (r.ok) { refreshLookup(id); if (S.view === 'outside') go('outside'); } }
 function soldDlg(id) {
   modal(`<h2>${id}: Sold</h2><label>Bill number (myBillBook / Zoho)</label><input id="sb">
+  <label>Is bill mein exchange / purana laptop liya? Value ₹ (nahi liya toh khaali)</label><input id="sxv" inputmode="numeric">
+  <label>Customer ka naam (exchange ho toh)</label><input id="sxc">
+  <p class="muted">Exchange likha toh wo laptop pendrive se stock mein chadhana padega, tab tak dashboard pe laal rahega.</p>
   <div class="btns"><button class="ok" id="sbb">Sold mark karo</button><button class="sec" onclick="closeModal()">Cancel</button></div>`);
   $('sb').focus();
-  $('sbb').onclick = async () => { const r = await act($('sbb'), 'stock.sold', { id, bill: val('sb') }, 'Sold ho gaya'); if (r.ok) { closeModal(); refreshLookup(id); } };
+  $('sbb').onclick = async () => { const r = await act($('sbb'), 'stock.sold', { id, bill: val('sb'), exchange: val('sxv') ? { value: val('sxv'), customer: val('sxc') } : null }, 'Sold ho gaya'); if (r.ok) { closeModal(); refreshLookup(id); } };
 }
 function unsellDlg(id) {
   modal(`<h2>${id}: wapas aaya</h2><label>Wajah</label><input id="ur" placeholder="Customer return / galti se sold">
@@ -558,15 +565,22 @@ VIEWS.dash = async () => {
   V(`${backBtn()}<h1>Dashboard</h1><div id="dout">Load…</div>`);
   const r = await call('dash.summary'); if (!r.ok) return; const s = r.s;
   $('dout').innerHTML = `<div class="stat"><div><b>${s.sales}</b><span>Sales mein</span></div><div><b>${s.repair}</b><span>Repair mein</span></div><div><b>${s.outside}</b><span>Bahar</span></div><div><b>${s.soldToday}</b><span>Aaj bike</span></div><div><b>${s.soldMonth}</b><span>Is mahine bike</span></div>${s.value !== undefined ? `<div><b>${money(Math.round(s.value))}</b><span>Stock ki kharid keemat</span></div>` : ''}<div><b>${s.jobs.open}</b><span>Khule repair jobs</span></div><div><b style="color:var(--bad)">${s.jobs.late}</b><span>3 din se zyada</span></div><div><b>${s.jobs.ready}</b><span>Ready, customer nahi aaya</span></div></div>
+  ${s.flags && s.flags.length ? `<h2 style="color:var(--bad)">Flags (${s.flags.length})</h2><div class="card">${s.flags.map(f => `<div class="line"><span>${esc(f.text)}</span><span class="muted">${esc(f.who)}</span></div>`).join('')}</div>` : '<h2>Flags</h2><p class="muted">Koi flag nahi.</p>'}
+  ${s.outsideByPartner && s.outsideByPartner.length ? `<h2>Kiske paas kitne laptop</h2><div class="card">${s.outsideByPartner.map(p => `<div class="line"><span><b>${esc(p.partner)}</b>: ${p.items.map(i => esc(i.id) + ' (' + esc(i.reason) + ', ' + esc(i.by) + ')').join(', ')}</span><span><b>${p.count}</b></span></div>`).join('')}</div>` : ''}
   <h2>Aaj ki ginti</h2><div class="card"><div class="line"><span>Sales (${esc(s.count.sales.who)})</span><span>${s.count.sales.done ? '✅ ' + esc(s.count.sales.done) : '⏳ baaki'}</span></div><div class="line"><span>Repair (${esc(s.count.repair.who)})</span><span>${s.count.repair.done ? '✅ ' + esc(s.count.repair.done) : '⏳ baaki'}</span></div></div>
   ${s.warranty.length ? `<h2>Dealer warranty khatam hone wali</h2><div class="card">${s.warranty.map(w => `<div class="line"><span><b>${esc(w.id)}</b> ${esc(w.model)}</span><span style="color:${w.daysLeft < 0 ? 'var(--bad)' : 'var(--warn)'}">${w.daysLeft < 0 ? 'khatam' : w.daysLeft + ' din'}</span></div>`).join('')}</div>` : ''}
   ${s.aged.length ? `<h2>Bahut din se pade laptop</h2><div class="card">${s.aged.map(a => `<div class="line"><span><b>${esc(a.id)}</b> ${esc(a.model)} · ${esc(a.loc)}</span><span>${a.days} din</span></div>`).join('')}</div>` : ''}
   ${s.outsideItems.length ? `<h2>Bahar gaye</h2><div class="card">${s.outsideItems.map(o => `<div class="line"><span><b>${esc(o.id)}</b> ${esc(o.partner)}</span><span style="color:${o.late ? 'var(--bad)' : ''}">${esc(o.expected)}</span></div>`).join('')}</div>` : ''}
   <h2>Parts stock</h2><div class="stat">${Object.entries(s.parts).map(([k, n]) => `<div><b>${n}</b><span>${esc(k)}</span></div>`).join('') || '<p class="muted">-</p>'}</div>
   <h2>Accessories</h2><div class="stat">${s.acc.map(a => `<div><b style="color:${a.qty <= 2 ? 'var(--bad)' : ''}">${a.qty}</b><span>${esc(a.item)}</span></div>`).join('')}</div>
+  <h2>Dealer scorecard</h2><div class="card"><div id="dsout">Load…</div></div>
   <h2>Repair report (mahina)</h2><div class="card"><div class="scanbox"><input id="rm" placeholder="MM-yyyy" value=""><button onclick="repRep()">Dikhao</button></div><div id="rrout"></div></div>`;
-  repRep();
+  repRep(); dealerRep();
 };
+async function dealerRep() {
+  const r = await call('report.dealers'); if (!r.ok) return;
+  $('dsout').innerHTML = r.rows.length ? `<div class="tablewrap"><table><tr><th>Mahina</th><th>Dealer</th><th>Kharide</th><th>Kharab aaye</th><th>%</th><th>Galat maal</th><th>Wapas bheje</th><th>Abhi dealer ke paas</th></tr>${r.rows.map(x => `<tr><td>${esc(x.month)}</td><td>${esc(x.dealer)}</td><td>${x.bought}</td><td>${x.faulty}</td><td style="color:${x.faultyPct >= 20 ? 'var(--bad)' : ''}">${x.faultyPct}%</td><td>${x.mismatch}</td><td>${x.returned}</td><td>${x.atDealer}</td></tr>`).join('')}</table></div>` : '<p class="muted">Abhi data nahi. PO se maal aane lagega toh yahan dikhega.</p>';
+}
 async function repRep() {
   const r = await call('report.repair', { month: val('rm') || undefined }); if (!r.ok) return;
   $('rrout').innerHTML = `<p class="muted">${esc(r.month)}</p><div class="tablewrap"><table><tr><th>Technician</th><th>Jobs</th><th>Same day</th><th>3 din+</th><th>Comeback</th><th>Amount</th>${r.rows[0] && r.rows[0].parts !== undefined ? '<th>Parts cost</th>' : ''}</tr>${r.rows.map(x => `<tr><td>${esc(x.tech)}</td><td>${x.jobs}</td><td>${x.sameDay}</td><td>${x.over3}</td><td>${x.comebacks}</td><td>${money(x.amount)}</td>${x.parts !== undefined ? `<td>${money(x.parts)}</td>` : ''}</tr>`).join('')}</table></div>`;
