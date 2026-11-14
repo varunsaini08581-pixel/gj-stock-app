@@ -32,7 +32,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .scanbox{display:flex;gap:8px}
 .scanbox input{font-size:20px;font-weight:600;letter-spacing:.5px}
 table{width:100%;border-collapse:collapse;font-size:14px;background:#fff}
-th{background:var(--navy);color:#fff;text-align:left;padding:8px;font-weight:600;position:sticky;top:54px}
+th{background:var(--navy);color:#fff;text-align:left;padding:8px;font-weight:600;position:sticky;top:0}
 td{border-bottom:1px solid var(--line);padding:8px;vertical-align:top}
 tr.click{cursor:pointer}tr.click:hover td{background:#eef4ff}
 .tablewrap{overflow-x:auto;border-radius:var(--r);border:1px solid var(--line)}

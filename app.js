@@ -158,6 +158,7 @@ VIEWS.home = async () => {
     ['outside', '🚚', 'Bahar gaye', has('move')],
     ['exchange', '🔁', 'Exchange / Buyback', has('exchange')],
     ['dash', '📊', 'Dashboard', has('dash')],
+    ['biz', '💰', 'Kharid · bikri · munafa', isAdmin()],
     ['approvals', '✅', 'Approvals', isAdmin()],
     ['users', '👥', 'Staff + devices', isAdmin()],
     ['settings', '⚙️', 'Settings + log', isAdmin()],
@@ -222,6 +223,9 @@ function stockCard(it) {
   ${it.soldBill ? `<b>Sold</b><span>${esc(it.soldBill)} · ${esc(it.soldDate)}</span>` : ''}
   ${it.transitTo ? `<b>Raaste mein</b><span style="color:var(--warn)">${esc(it.transitBy)} ne ${esc(it.transitTo)} ko bheja (${esc(it.transitAt)}). Accept hone tak ${esc(it.transitBy)} ke naam.</span>` : ''}
   <b>Pendrive scan</b><span>${esc(it.lastPendrive || 'kabhi nahi')}${it.battery ? ' · battery ' + esc(it.battery) : ''}${it.verified === 'N' ? ' · <b style="color:var(--bad)">verify nahi hua</b>' : ''}${it.hwPending ? ' · <b style="color:var(--bad)">part badla, approval pending</b>' : ''}</span>
+  ${it.diskHealth ? `<b>Disk health</b><span>${esc(it.diskHealth)}</span>` : ''}${it.scanInfo ? `<b>Jaanch</b><span>${esc(it.scanInfo)}</span>` : ''}
+  ${it.lock ? `<b>LOCK</b><span style="color:var(--bad)"><b>${esc(it.lock)}</b></span>` : ''}${it.unfit ? `<b>Unfit</b><span style="color:var(--bad)">${esc(it.unfit)}</span>` : ''}
+  ${it.soldPrice ? `<b>Bikri</b><span>${money(it.soldPrice)}</span>` : ''}
   <b>Sticker ginti</b><span>${esc(it.lastScan || '-')}</span>${it.notes ? `<b>Note</b><span>${esc(it.notes)}</span>` : ''}</div>
   <div class="btns">${actions.join('')}</div></div>`;
 }
@@ -252,12 +256,13 @@ async function outDlg(id) {
 async function moveIn(id) { const r = await act(null, 'move.in', { id }, 'Wapas aa gaya, repair mein check karo'); if (r.ok) { refreshLookup(id); if (S.view === 'outside') go('outside'); } }
 function soldDlg(id) {
   modal(`<h2>${id}: Sold</h2><label>Bill number (myBillBook / Zoho)</label><input id="sb">
+  <label>Kitne mein becha ₹ (bill ka amount)</label><input id="sp" inputmode="numeric">
   <label>Is bill mein exchange / purana laptop liya? Value ₹ (nahi liya toh khaali)</label><input id="sxv" inputmode="numeric">
   <label>Customer ka naam (exchange ho toh)</label><input id="sxc">
   <p class="muted">Exchange likha toh wo laptop pendrive se stock mein chadhana padega, tab tak dashboard pe laal rahega.</p>
   <div class="btns"><button class="ok" id="sbb">Sold mark karo</button><button class="sec" onclick="closeModal()">Cancel</button></div>`);
   $('sb').focus();
-  $('sbb').onclick = async () => { const r = await act($('sbb'), 'stock.sold', { id, bill: val('sb'), exchange: val('sxv') ? { value: val('sxv'), customer: val('sxc') } : null }, 'Sold ho gaya'); if (r.ok) { closeModal(); refreshLookup(id); } };
+  $('sbb').onclick = async () => { const r = await act($('sbb'), 'stock.sold', { id, bill: val('sb'), price: val('sp'), exchange: val('sxv') ? { value: val('sxv'), customer: val('sxc') } : null }, 'Sold ho gaya'); if (r.ok) { closeModal(); refreshLookup(id); } };
 }
 function unsellDlg(id) {
   modal(`<h2>${id}: wapas aaya</h2><label>Wajah</label><input id="ur" placeholder="Customer return / galti se sold">
@@ -579,11 +584,26 @@ VIEWS.dash = async () => {
 };
 async function dealerRep() {
   const r = await call('report.dealers'); if (!r.ok) return;
-  $('dsout').innerHTML = r.rows.length ? `<div class="tablewrap"><table><tr><th>Mahina</th><th>Dealer</th><th>Kharide</th><th>Kharab aaye</th><th>%</th><th>Galat maal</th><th>Wapas bheje</th><th>Abhi dealer ke paas</th></tr>${r.rows.map(x => `<tr><td>${esc(x.month)}</td><td>${esc(x.dealer)}</td><td>${x.bought}</td><td>${x.faulty}</td><td style="color:${x.faultyPct >= 20 ? 'var(--bad)' : ''}">${x.faultyPct}%</td><td>${x.mismatch}</td><td>${x.returned}</td><td>${x.atDealer}</td></tr>`).join('')}</table></div>` : '<p class="muted">Abhi data nahi. PO se maal aane lagega toh yahan dikhega.</p>';
+  $('dsout').innerHTML = r.rows.length ? `<div class="tablewrap"><table><tr><th>Mahina</th><th>Dealer</th><th>Kharide</th><th>Kharab aaye</th><th>Unfit</th><th>%</th><th>Galat maal</th><th>Wapas bheje</th><th>Abhi dealer ke paas</th></tr>${r.rows.map(x => `<tr><td>${esc(x.month)}</td><td>${esc(x.dealer)}</td><td>${x.bought}</td><td>${x.faulty}</td><td>${x.unfit}</td><td style="color:${x.faultyPct >= 20 ? 'var(--bad)' : ''}">${x.faultyPct}%</td><td>${x.mismatch}</td><td>${x.returned}</td><td>${x.atDealer}</td></tr>`).join('')}</table></div>` : '<p class="muted">Abhi data nahi. PO se maal aane lagega toh yahan dikhega.</p>';
 }
 async function repRep() {
   const r = await call('report.repair', { month: val('rm') || undefined }); if (!r.ok) return;
   $('rrout').innerHTML = `<p class="muted">${esc(r.month)}</p><div class="tablewrap"><table><tr><th>Technician</th><th>Jobs</th><th>Same day</th><th>3 din+</th><th>Comeback</th><th>Amount</th>${r.rows[0] && r.rows[0].parts !== undefined ? '<th>Parts cost</th>' : ''}</tr>${r.rows.map(x => `<tr><td>${esc(x.tech)}</td><td>${x.jobs}</td><td>${x.sameDay}</td><td>${x.over3}</td><td>${x.comebacks}</td><td>${money(x.amount)}</td>${x.parts !== undefined ? `<td>${money(x.parts)}</td>` : ''}</tr>`).join('')}</table></div>`;
+}
+
+/* ------------------------------------------------ business report (sirf Varun) */
+VIEWS.biz = async () => {
+  V(`${backBtn()}<h1>Kharid · bikri · munafa</h1><div id="bz">Load…</div>`);
+  const r = await call('report.business'); if (!r.ok) return; window._BZ = r;
+  const col = n => `style="color:${n < 0 ? 'var(--bad)' : 'var(--ok)'}"`;
+  $('bz').innerHTML = `${r.noCost ? `<div class="alert">${r.noCost} bike hue laptop ka kharid rate ya bikri ka daam system mein nahi hai, unka munafa ginti mein nahi aaya. (Purana stock: laptop khol ke Edit mein kharid rate daal sakte ho.)</div>` : ''}
+  <h2>Mahine-wise</h2><div class="tablewrap"><table><tr><th>Mahina</th><th>Bike</th><th>Bikri</th><th>Laagat (kharid + parts)</th><th>Munafa</th><th>Bina hisaab</th></tr>${r.months.map(m => `<tr><td>${esc(m.month)}</td><td>${m.sold}</td><td>${money(m.revenue)}</td><td>${money(m.cost)}</td><td ${col(m.profit)}><b>${money(m.profit)}</b></td><td>${m.noCost}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Abhi koi bikri record nahi.</td></tr>'}</table></div>
+  <h2>Model-wise</h2><p class="muted">Model pe click karo: uski kharid history dikhegi.</p><div class="tablewrap"><table><tr><th>Model</th><th>Kharide</th><th>Avg kharid</th><th>Sabse sasta</th><th>Bike</th><th>Avg bikri</th><th>Avg munafa</th><th>Avg din</th><th>Stock mein</th><th></th></tr>${r.models.map((x, i) => `<tr style="cursor:pointer" onclick="bizModel(${i})"><td><b>${esc(x.model)}</b></td><td>${x.bought}</td><td>${x.avgBuy ? money(x.avgBuy) : '-'}</td><td>${x.minRate ? money(x.minRate) + ' · ' + esc(x.cheapest) : '-'}</td><td>${x.sold}</td><td>${x.avgSale ? money(x.avgSale) : '-'}</td><td ${col(x.avgProfit)}>${x.profitN ? money(x.avgProfit) : '-'}</td><td>${x.avgDays}</td><td>${x.inStock}${x.oldest ? ' (' + x.oldest + ' din)' : ''}</td><td>${x.tag ? pill(x.tag) : ''}</td></tr>`).join('')}</table></div>
+  <h2>Dealer-wise</h2><div class="tablewrap"><table><tr><th>Dealer / source</th><th>Kharide</th><th>Avg rate</th><th>Bike</th><th>Kul munafa</th><th>Avg munafa / laptop</th></tr>${r.dealers.map(d => `<tr><td>${esc(d.dealer)}</td><td>${d.bought}</td><td>${d.avgRate ? money(d.avgRate) : '-'}</td><td>${d.sold}</td><td ${col(d.profit)}>${money(d.profit)}</td><td>${d.profitN ? money(d.avgProfit) : '-'}</td></tr>`).join('')}</table></div>`;
+};
+function bizModel(i) {
+  const x = window._BZ.models[i];
+  modal(`<h2>${esc(x.model)}: kharid history</h2>${x.buys.length ? `<div class="tablewrap"><table><tr><th>Kab</th><th>Kahan se</th><th>Rate</th><th>Spec</th><th>ID</th></tr>${x.buys.map(b => `<tr><td>${esc(b.date)}</td><td>${esc(b.from)}</td><td>${b.rate === x.minRate ? '<b style="color:var(--ok)">' + money(b.rate) + '</b>' : money(b.rate)}</td><td>${esc(b.spec)}</td><td>${esc(b.id)}</td></tr>`).join('')}</table></div><p class="muted">Sabse sasta: ${money(x.minRate)} (${esc(x.cheapest)}) · sabse mehenga: ${money(x.maxRate)}</p>` : '<p class="muted">Kisi ka kharid rate nahi daala gaya.</p>'}<div class="btns"><button class="sec" onclick="closeModal()">Band</button></div>`);
 }
 
 /* ------------------------------------------------ admin */
