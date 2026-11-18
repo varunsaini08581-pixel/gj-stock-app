@@ -16,7 +16,7 @@ Object.assign(T, {
   bUnseal: 'Remove seal', bWriteOff: 'Write off (बट्टे खाते)', bRebind: 'Motherboard replaced (rebind)', bReassign: 'Move to another PO line', bHistory: 'History', bStickerMissing: 'Sticker missing',
   handPendrive: 'Use the pendrive to hand over, send outside or return this laptop.',
   stTitle: 'Change status — {id}', stNew: 'New status', stText: 'Problem / reason', stUser: 'Used by', stPurpose: 'Purpose', stUntil: 'Until', stHandover: 'A handover to Repair will start automatically. The laptop stays in your name until Repair accepts it.',
-  stSaved: 'Status saved.', stSavedHand: 'Status saved. Handover to Repair started.', stNone: 'No status change is available for this laptop.',
+  stSaved: 'Status saved.', stSavedHand: 'Status saved. Handover to Repair started.', stNone: 'No status change is available for this laptop.', stUndoPin: 'Undoing a return to the dealer is an override: the owner is alerted.', sgRescanCleared: 'Sighting saved. The rescan flag is cleared; the owner alert lists what was seen.', stReservedFirst: 'This laptop is reserved. Cancel the reservation first (Sales > Reservations), then change its status.',
   edTitle: 'Edit laptop — {id}', edReason: 'Reason for the change', edNothing: 'Nothing was changed.', rateTitle: 'Change purchase rate — {id}', rateNew: 'New purchase rate', serTitle: 'Correct serial number — {id}', serNew: 'Correct serial number',
   unsTitle: 'Cannot be scanned — {id}', unsMode: 'Why it cannot be scanned', unsLock: 'Lock type', unsIntro: 'The request goes for approval. Once approved, the laptop is exempt from the scan cycle but stays in the daily sticker count.',
   woTitle: 'Write off (बट्टे खाते) — {id}', woKind: 'Kind', woReuse: 'The sticker can be used again', woIntro: 'A write-off needs approval. Pull usable parts first when the laptop is used for parts.',
@@ -119,10 +119,10 @@ function drawLaptop(box, r, m) {
     fields: [{ k: 'mode', l: T.unsMode, t: 'sel', req: true, o: opts('SCAN_MODE', ['NO_POWER', 'NO_OS', 'LOCKED', 'UNSUPPORTED']) }, { k: 'lockCode', l: T.unsLock, t: 'sel', o: opts('UNFIT', ['LOCK_BIOS', 'LOCK_DISK', 'LOCK_ACTIVATION', 'LOCK_MDM', 'LOCK_BITLOCKER']), req: true, show: v => v.mode === 'LOCKED' }, { k: 'reason', l: T.fReason, t: 'area', req: true, max: 200 }], build: v => Object.assign({ id: it.id }, v) }));
   if (has('approve') && active && unscannable(it)) add(T.bSight, () => actionDialog({ title: fmt(T.sgTitle, { id: it.id }), intro: T.sgIntro, action: 'stock.sight', pin: true, submit: T.bSight,
     fields: [{ k: 'RAM', l: T.sgRam, t: 'check' }, { k: 'DISK', l: T.sgDisk, t: 'check' }, { k: 'SCREEN', l: T.sgScreen, t: 'check' }, { k: 'BATTERY', l: T.sgBattery, t: 'check' }, { k: 'note', l: T.sgNote, t: 'area', max: 200, wide: true }],
-    build: v => ({ id: it.id, present: { RAM: v.RAM === 'Y' ? 'Y' : 'N', DISK: v.DISK === 'Y' ? 'Y' : 'N', SCREEN: v.SCREEN === 'Y' ? 'Y' : 'N', BATTERY: v.BATTERY === 'Y' ? 'Y' : 'N' }, note: v.note, pin: v.pin }), ok: r => ((r.missing || []).length ? T.sgMissing : T.sgDone) }));
+    build: v => ({ id: it.id, present: { RAM: v.RAM === 'Y' ? 'Y' : 'N', DISK: v.DISK === 'Y' ? 'Y' : 'N', SCREEN: v.SCREEN === 'Y' ? 'Y' : 'N', BATTERY: v.BATTERY === 'Y' ? 'Y' : 'N' }, note: v.note, pin: v.pin }), ok: r => ((r.missing || []).length ? T.sgMissing : (r.rescanCleared === 'Y' ? T.sgRescanCleared : T.sgDone)) }));
   if (it.scanMode === 'SEALED' && active && mine) add(T.bUnseal, e => runAction(e.currentTarget, 'stock.unseal', { id: it.id }, { ok: T.unsealDone }));
   if (has('stock.writeoff') && (active || it.state === 'PENDING') && mine) add(T.bWriteOff, () => actionDialog({ title: fmt(T.woTitle, { id: it.id }), intro: T.woIntro, action: 'stock.writeOff', pin: true, danger: true, submit: T.bWriteOff,
-    fields: [{ k: 'kind', l: T.woKind, t: 'sel', req: true, o: opts('WRITEOFF') }, { k: 'reason', l: T.fReason, t: 'area', req: true, max: 200 }, { k: 'stickerReusable', l: T.woReuse, t: 'check', show: v => v.kind === 'ENTRY_MISTAKE' }], build: v => Object.assign({ id: it.id }, v) }));
+    fields: [{ k: 'kind', l: T.woKind, t: 'sel', req: true, o: opts('WRITEOFF') }, { k: 'reason', l: T.fReason, t: 'area', req: true, max: 200 }], build: v => Object.assign({ id: it.id }, v) })); /* round 1 B5 (R1A-14): no "sticker reusable" option */
   if (has('stock.rebind') && active) add(T.bRebind, () => actionDialog({ title: fmt(T.rbTitle, { id: it.id }), intro: T.rbIntro, action: 'stock.rebind', fields: [{ k: 'reason', l: T.fReason, t: 'area', req: true, max: 200 }], build: v => ({ id: it.id, reason: v.reason }) }));
   if (has('po') && (it.source === 'PURCHASE' || it.source === 'REPLACEMENT') && (it.state === 'ACTIVE' || it.state === 'PENDING')) add(T.bReassign, () => actionDialog({ title: fmt(T.raTitle, { id: it.id }), action: 'stock.reassignPO',
     fields: [{ k: 'poNo', l: T.raPo, t: 'code', cam: false, req: true, dflt: it.poNo }, { k: 'line', l: T.raLine, t: 'int', req: true, min: 1 }, { k: 'shipmentId', l: T.raShip }], build: v => Object.assign({ id: it.id }, v) }));
@@ -145,8 +145,9 @@ function statusTargets(it) {
   if (Array.isArray(it.allowedStatus)) return it.allowedStatus;
   const s = it.status, rep = role() === 'REPAIR', t = [];
   if ((s === 'UNDER_CHECK' || s === 'NEEDS_REPAIR') && (isMgr() || (rep && it.location === 'REPAIR'))) t.push('READY');
-  if (s === 'READY' || s === 'RESERVED' || s === 'SHOP_USE') t.push('NEEDS_REPAIR');
-  if (s !== 'DEALER_RETURN' && (isMgr() || rep) && (it.source === 'PURCHASE' || it.source === 'REPLACEMENT')) t.push('DEALER_RETURN');
+  if (s === 'READY' || s === 'SHOP_USE') t.push('NEEDS_REPAIR'); /* round 1 B5 (R1B-15): a reserved laptop - cancel the reservation first */
+  if (s === 'DEALER_RETURN' && isMgr()) t.push('UNDER_CHECK'); /* round 1 B5 (R1B-05): undo a mistaken return to dealer (checked again before Ready) */
+  if (s !== 'DEALER_RETURN' && s !== 'RESERVED' && (isMgr() || rep) && (it.source === 'PURCHASE' || it.source === 'REPLACEMENT')) t.push('DEALER_RETURN');
   if (isMgr() && s === 'READY') t.push('SHOP_USE');
   if (isMgr() && s === 'SHOP_USE') t.push('READY');
   if (isMgr() && s !== 'MISSING') t.push('MISSING');
@@ -154,14 +155,16 @@ function statusTargets(it) {
 }
 function statusDialog(it) {
   const targets = statusTargets(it);
-  if (!targets.length) { notify(T.stNone, 'bad'); return; }
+  if (!targets.length) { notify(it.status === 'RESERVED' ? T.stReservedFirst : T.stNone, 'bad'); return; }
   const needText = v => v.status === 'NEEDS_REPAIR' || v.status === 'DEALER_RETURN';
+  const undoDr = v => it.status === 'DEALER_RETURN' && v.status === 'UNDER_CHECK';
   const hand = note(T.stHandover, 'warn'); hand.hidden = true;
   const m = actionDialog({ title: fmt(T.stTitle, { id: it.id }), action: 'stock.setStatus', disableUntilChanged: true,
     fields: [{ k: 'cur', l: T.fStatus, t: 'static', dflt: lbl('STATUS', it.status) }, { k: 'status', l: T.stNew, t: 'sel', req: true, placeholder: true, o: opts('STATUS', targets) },
       { k: 'text', l: T.stText, t: 'area', max: 200, req: true, show: needText }, { k: 'userId', l: T.stUser, t: 'sel', o: () => userOpts(), req: true, show: v => v.status === 'SHOP_USE' },
-      { k: 'purpose', l: T.stPurpose, req: true, show: v => v.status === 'SHOP_USE' }, { k: 'until', l: T.stUntil, t: 'date', req: true, show: v => v.status === 'SHOP_USE' }],
-    build: v => { const d = { id: it.id, status: v.status }; if (v.text) d.text = v.text; if (v.status === 'SHOP_USE') d.shopUse = { userId: v.userId, purpose: v.purpose, until: v.until }; return d; },
+      { k: 'purpose', l: T.stPurpose, req: true, show: v => v.status === 'SHOP_USE' }, { k: 'until', l: T.stUntil, t: 'date', req: true, show: v => v.status === 'SHOP_USE' },
+      { k: 'pin', l: T.yourPin, t: 'pin', req: true, show: undoDr, hint: T.stUndoPin }],
+    build: v => { const d = { id: it.id, status: v.status }; if (v.text) d.text = v.text; if (undoDr(v)) d.pin = v.pin; /* review F2: undoing a return to dealer is an override */ if (v.status === 'SHOP_USE') d.shopUse = { userId: v.userId, purpose: v.purpose, until: v.until }; return d; },
     ok: r => (r.approvalId ? T.sentForApproval : (r.handoverStarted === 'Y' || r.handoverStarted === true ? T.stSavedHand : T.stSaved)),
     extra: (body, F) => { body.appendChild(hand); F.el.addEventListener('change', () => { hand.hidden = !(it.location === 'SALES' && needText(F.all())); }); } });
   return m;
@@ -220,7 +223,7 @@ VIEWS.stock = {
       { k: 'state', l: T.fState, card: true, v: r => lbl('STATE', r.state), el: r => pill('STATE', r.state) }, { k: 'flags', l: T.fFlags, card: true, v: r => (r.flags || []).map(f => lbl('FLAG', f)).join('; '), el: r => chipList('FLAG', r.flags, 'warn') },
       { k: 'ageDays', l: T.fAge, num: true }, { k: 'purchaseRate', l: T.fRate, num: true, fmt: v => (v === '' || v == null ? '' : money(v)), csv: r => (r.purchaseRate == null ? '' : r.purchaseRate), hide: () => !has('cost.view') }]);
     let lv;
-    viewHead(root, T.slTitle, [btn(T.slPrint8, async e => { e.currentTarget.disabled = true; const rows = lv.rows(); printTable(T.slTitle, base.concat([{ k: 'scanCycleState', l: T.fScanStatus, v: r => lbl('CYCLE_STATE', r.scanCycleState) }]), rows); e.currentTarget.disabled = false; }, 'sec sm')]);
+    viewHead(root, T.slTitle, [btn(T.slPrint8, async e => { const b8 = e.currentTarget; b8.disabled = true; const rows = await lv.allRows(); b8.disabled = false; printTable(rows.length < lv.total() ? T.slTitle + ' — ' + fmt(T.showing, { x: rows.length, y: lv.total() }) : T.slTitle, base.concat([{ k: 'scanCycleState', l: T.fScanStatus, v: r => lbl('CYCLE_STATE', r.scanCycleState) }]), rows); }, 'sec sm')]);
     lv = listView(root, { action: 'stock.list', name: 'Stock_list', title: T.slTitle, cols, searchPh: T.slSearch, empty: T.slEmpty, onRow: r => openLaptop(r.id),
       filterInit: arg === 'transit' ? { flag: 'IN_TRANSIT' } : {},
       filters: [{ k: 'state', l: T.fState, t: 'sel', o: opts('STATE'), ph: T.slStateDefault }, { k: 'status', l: T.fStatus, t: 'sel', o: opts('STATUS'), ph: T.all }, { k: 'location', l: T.fSection, t: 'sel', o: opts('LOCATION', ['SALES', 'REPAIR', 'OUTSIDE']), ph: T.all },

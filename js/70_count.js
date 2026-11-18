@@ -10,6 +10,8 @@ Object.assign(T, {
   ctSealTitle: 'Seal number — {id}', ctSealIntro: 'This laptop is packed and sealed (सील बंद). Type the number printed on its seal.', ctResultTitle: '{section} — count result', ctMissing: 'Missing — select a reason for each', ctMissingNone: 'All laptops accounted for.',
   ctReason: 'Reason', ctExtra: 'Extra (should not be in this section)', ctExtraHint: 'Move these to the correct section with a handover.', ctUnknown: 'Unknown codes scanned', ctNoSticker: 'Laptops in this section without a sticker', ctBackToScan: 'Go back and scan more',
   ctClose: 'Close count', ctClosed: 'Count closed.', ctSummary: 'Expected {expected} · Found {found} · Missing {missing} · Extra {extra}', ctReasonNeeded: 'Choose a reason for {id}.', ctInfo: 'Details', ctAccIntro: 'Count every item and type the quantity you counted. The recorded balance is not shown.',
+  ctWhichTitle: 'Stock laptop or repair job?', ctWhichIntro: 'The number you typed is both {gj} (stock laptop) and {rj} (customer repair job). Which sticker is on the laptop in front of you?', ctWhichStock: 'Stock laptop {id}', ctWhichJob: 'Repair job {id}',
+  ctAccNotCounted: 'Not counted yet — enter the quantity (0 if none):',
   ctAccQty: 'Quantity counted', ctAccSave: 'Save quantities and show differences', ctAccNeed: 'Enter a quantity for every item.', ctDiffNone: 'No differences.',
   cyTitle: 'Scan cycle', cyNotOnly: 'Show only laptops not scanned', cySpot: 'Spot check — scan within 2 hours', cyShelf: 'Status', cyState: 'Scan status', cyLastAt: 'Last scan', cyLastBy: 'Scanned by', cyEmpty: 'No laptops in this section.', cyDoneOf: '{done} of {total} scanned ({pct}%)',
   cyMonth: 'Cycles of the month', cyCycle: 'Cycle', cyDates: 'Dates', cyEnds: 'Ends', cySales: 'Sales — responsible', cyRepair: 'Repair — responsible', cySubmitted: 'Submitted', cySubmittedEarly: 'Submitted early (incomplete) - final sheet at cycle end', cyNotSubmitted: 'Not submitted', cySubSales: 'Sales sheet', cySubRepair: 'Repair sheet',
@@ -26,7 +28,7 @@ VIEWS.count = {
   title: T.ctTitle, perm: () => has('count'),
   render(root, arg) {
     viewHead(root, T.ctTitle); root.appendChild(h('p', { class: 'intro', text: T.ctIntro }));
-    const startKind = async (b, section, kind) => { const r = await runAction(b, 'count.start', kind === 'DAILY' ? { section } : { section, kind }, { ok: false, refresh: false }); if (r.ok) countScreen(clear($('#view')), { countId: r.countId, section, kind, scanned: r.scanned || 0 }); };
+    const startKind = async (b, section, kind) => { const r = await runAction(b, 'count.start', kind === 'DAILY' ? { section } : { section, kind }, { ok: false, refresh: false }); if (r.ok) countScreen(clear($('#view')), { countId: r.countId, section, kind, scanned: r.scanned || 0, items: r.items }); };
     S.refresh = load(root, 'count.today', {}, (r, box) => {
       (r.sections || []).forEach(s => {
         const closed = s.status === 'CLOSED';
@@ -67,18 +69,21 @@ function countScreen(root, c) {
     while (queue.length) {
       const x = queue[0]; let data = { countId: c.countId, code: x.code, input: x.input }; if (x.sealNo) data.sealNo = x.sealNo;
       let r = await api('count.scan', data);
+      /* round 1 B2 (R1B-04): a bare number in the Repair count that is both a GJ and an RJ sticker - the counter says which one */
+      if (!r.ok && r.code === 'COUNT_AMBIGUOUS' && r.gj && r.rj && root.isConnected) { const pick = await askPrefix(r.gj, r.rj); if (pick) { x.code = pick; data.code = pick; r = await api('count.scan', data); } }
       if (!r.ok && r.code === 'SEAL_REQUIRED' && root.isConnected) { const seal = await askSeal(x.code); if (seal) { x.sealNo = seal; data.sealNo = seal; r = await api('count.scan', data); } }
       queue.shift();
       if (!root.isConnected) break;
-      if (r.ok) { x.result = r.result; x.state = r.result === 'UNKNOWN' ? 'bad' : 'ok'; x.retry = false; if (typeof r.scanned === 'number') big.textContent = String(r.scanned); beep(r.result === 'UNKNOWN'); }
+      if (r.ok) { if (r.item && /^(GJ|RJ)-\d+$/.test(r.item)) x.code = r.item; x.result = r.result; x.state = r.result === 'UNKNOWN' ? 'bad' : 'ok'; x.retry = false; if (typeof r.scanned === 'number') big.textContent = String(r.scanned); beep(r.result === 'UNKNOWN'); }
       else { x.state = 'bad'; x.msg = r.msg; x.retry = r.code !== 'SEAL_WRONG' && r.code !== 'COUNT_NOT_OPEN'; beep(true); }
       draw();
     }
     running = false;
   }
+  function askPrefix(gj, rj) { return new Promise(res => { let done = false; const m = openModal({ title: T.ctWhichTitle, onClose: () => { if (!done) res(''); } }); append(m.body, h('p', { text: fmt(T.ctWhichIntro, { gj, rj }) })); const pick = v => { done = true; m.close(); res(v); }; append(m.foot, h('div', { class: 'foot-btns' }, btn(T.cancel, () => pick(''), 'sec'), btn(fmt(T.ctWhichStock, { id: gj }), () => pick(gj), 'sec'), btn(fmt(T.ctWhichJob, { id: rj }), () => pick(rj), ''))); }); }
   function askSeal(id) { return new Promise(res => { let done = false; const m = actionDialog({ title: fmt(T.ctSealTitle, { id }), intro: T.ctSealIntro, fields: [{ k: 'sealNo', l: T.fSeal, req: true, max: 40 }], run: async d => { done = true; res(d.sealNo); return { ok: true }; }, ok: () => '', refresh: false }); m.onClose = () => { if (!done) res(''); }; }); }
   function submit(mode) {
-    const code = c.kind === 'PARTS' ? normCode(inp.value) : normSticker(inp.value, c.section === 'REPAIR' && /^RJ/i.test(inp.value) ? 'RJ' : 'GJ'); inp.value = '';
+    const code = c.kind === 'PARTS' ? normCode(inp.value) : (c.section === 'REPAIR' && /^\s*\d{1,7}\s*$/.test(inp.value) ? inp.value.trim() : normSticker(inp.value, c.section === 'REPAIR' && /^RJ/i.test(inp.value) ? 'RJ' : 'GJ')); inp.value = '';
     if (!code) return;
     const x = { code, input: mode || (fast > slow ? 'SCANNER' : 'TYPED'), state: 'wait' }; fast = 0; slow = 0;
     queue.push(x); shown.push(x); draw(); pump();
@@ -112,13 +117,17 @@ function countResult(root, c, r) {
   else card.appendChild(simpleTable([{ k: 'id', l: T.cRef, main: true }, { k: 'info', l: T.ctInfo, main: true }, { k: 'reason', l: T.ctReason, el: x => { const s = h('select', { 'aria-label': T.ctReason + ' ' + x.id }); s.appendChild(h('option', { value: '', text: T.select })); opts('MISSING_REASON').forEach(o => s.appendChild(h('option', { value: o.v, text: o.t }))); selects[x.id] = s; return s; } }], missing));
   if (extra.length) { card.appendChild(h('h2', { text: T.ctExtra })); card.appendChild(h('p', { class: 'hint', text: T.ctExtraHint })); card.appendChild(simpleTable([{ k: 'id', l: T.cRef, main: true }, { k: 'info', l: T.ctInfo }], extra)); }
   if (unknown.length) { card.appendChild(h('h2', { text: T.ctUnknown })); card.appendChild(h('p', { text: unknown.map(u => (typeof u === 'string' ? u : u.code || u.id)).join(', ') })); }
+  const notCounted = c.kind === 'ACCESSORY' && Array.isArray(r.notCounted) ? r.notCounted : [], ncIn = {};
+  if (notCounted.length) { card.appendChild(h('h2', { text: T.ctAccNotCounted })); card.appendChild(simpleTable([{ k: 'item', l: T.acItem, main: true }, { k: 'qty', l: T.ctAccQty, el: a => { const i = h('input', { type: 'text', inputmode: 'numeric', class: 'num', 'aria-label': T.ctAccQty + ' ' + a.item, autocomplete: 'off', maxlength: 5 }); i.addEventListener('input', () => { i.value = digits(i.value); }); ncIn[a.itemId] = i; return i; } }], notCounted)); }
   const F = mkForm([c.kind === 'DAILY' ? { k: 'noSticker', l: T.ctNoSticker, t: 'int', req: true, maxv: 500 } : null, { k: 'pin', l: T.yourPin, t: 'pin', req: true }].filter(Boolean));
   const err = h('div', { class: 'errbox', role: 'alert', hidden: true });
   const b = btn(T.ctClose, async () => {
     if (b.dataset.busy) return; err.hidden = true; const reasons = {};
     for (const x of missing) { const v = selects[x.id] ? selects[x.id].value : ''; if (!v) { err.textContent = fmt(T.ctReasonNeeded, { id: x.id }); err.hidden = false; selects[x.id].focus(); return; } reasons[x.id] = v; }
+    if (notCounted.some(a => ncIn[a.itemId].value === '')) { err.textContent = T.ctAccNeed; err.hidden = false; return; }
     const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; }
     const v = F.get(); b.dataset.busy = '1'; b.disabled = true;
+    for (const a of notCounted) { const q = await api('count.scan', { countId: c.countId, code: a.itemId, itemId: a.itemId, qty: Number(ncIn[a.itemId].value), input: 'TYPED' }); if (!q.ok) { err.textContent = a.item + ': ' + q.msg; err.hidden = false; delete b.dataset.busy; b.disabled = false; return; } }
     const x = await api('count.close', { countId: c.countId, reasons, noSticker: v.noSticker || 0, pin: v.pin }); delete b.dataset.busy; b.disabled = false;
     if (!x.ok) { if (x.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); err.textContent = x.msg; err.hidden = false; return; }
     const s = x.summary || {}; notify(T.ctClosed + ' ' + fmt(T.ctSummary, { expected: s.expected == null ? '–' : s.expected, found: s.found == null ? '–' : s.found, missing: s.missing == null ? missing.length : s.missing, extra: s.extra == null ? extra.length : s.extra }), 'ok');
@@ -127,7 +136,8 @@ function countResult(root, c, r) {
   append(card, [F.el, err, h('div', { class: 'btns' }, c.kind === 'ACCESSORY' ? null : btn(T.ctBackToScan, () => countScreen(clear(root), c), 'sec'), b)]);
 }
 function accCount(root, c) {
-  const items = (L().accItems || []).filter(a => a.active !== 'N' && a.active !== false), inputs = {};
+  /* round 1 B2 (R1A-03 / R1B-07): the items this count expects come from the server (count.start), not from the list loaded at sign-in */
+  const items = (Array.isArray(c.items) ? c.items : (L().accItems || [])).filter(a => a.active !== 'N' && a.active !== false), inputs = {};
   root.appendChild(h('p', { class: 'intro', text: T.ctAccIntro }));
   const table = simpleTable([{ k: 'item', l: T.acItem, main: true }, { k: 'group', l: T.acGroup }, { k: 'qty', l: T.ctAccQty, el: a => { const i = h('input', { type: 'text', inputmode: 'numeric', class: 'num', 'aria-label': T.ctAccQty + ' ' + a.item, autocomplete: 'off', maxlength: 5 }); i.addEventListener('input', () => { i.value = digits(i.value); }); inputs[a.itemId] = i; return i; } }], items, { empty: T.acEmpty });
   const err = h('div', { class: 'errbox', role: 'alert', hidden: true });

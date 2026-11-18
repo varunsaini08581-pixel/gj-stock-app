@@ -142,7 +142,7 @@ const S = { me: null, token: '', mobile: '', lists: null, idleMin: 15, locked: f
 const Hooks = { lock: null, update: null, pending: null, deviceGone: null, forcePin: null };
 
 /* fix round 5 (R5access-03): actions that hand out owner-level power are sent with the PIN of the signed-in person - asked in a small dialog */
-const PIN_FIRST = { 'admin.userSave': 1, 'admin.deviceSave': 1, 'admin.pinReset': 1, 'admin.unlock': 1, 'admin.networkAdd': 1 };
+const PIN_FIRST = { 'admin.userSave': 1, 'admin.deviceSave': 1, 'admin.pinReset': 1, 'admin.unlock': 1, 'admin.networkAdd': 1, 'alerts.ackType': 1 }; /* fix round 7 (R7sec-09) */
 let _pinMemo = null; /* one PIN entry serves the requests of the next 20 seconds (bulk revoke, a confirm round-trip) */
 async function api(action, data, o) {
   o = o || {};

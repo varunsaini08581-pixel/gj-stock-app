@@ -214,6 +214,12 @@ async function callConfirmed(action, data) {
   for (let i = 0; i < 6; i++) {
     const r = await api(action, d, { rid });
     if (i === 0) { if (r.code === 'NET') { NET_RIDS.set(nk, rid); if (NET_RIDS.size > 30) NET_RIDS.delete(NET_RIDS.keys().next().value); } else NET_RIDS.delete(nk); }
+    /* review F3: an owner override needs the PIN again - ask for it and send the same request again (once) */
+    if (!r.ok && r.code === 'OVERRIDE_PIN_NEEDED' && !(d && d.pin) && typeof pinPrompt === 'function') {
+      const pin = await pinPrompt(r.msg || T.pinAskIntro);
+      if (!pin) return { ok: false, cancelled: true, code: 'CANCELLED', msg: T.pinCancelled };
+      d = Object.assign({}, d, { pin }); rid += '-p'; continue;
+    }
     if (r.ok || !r.confirm) return r;
     if (!(await confirmBox(r.msg, { yes: T.yes, no: T.no }))) return { ok: false, cancelled: true };
     d = Object.assign({}, d, { confirm: (d.confirm || []).concat([r.confirm]) }); rid += '-c';
@@ -261,10 +267,11 @@ function actionDialog(c) {
     busy = true; save.disabled = true; const old = save.textContent; save.textContent = T.wait;
     let r; try { r = c.run ? await c.run(data, v) : await callConfirmed(c.action, data); } finally { busy = false; save.disabled = false; save.textContent = old; }
     if (r.cancelled) return;
-    if (!r.ok) { F.clearErr(); if (r.field) F.mark(r.field, ''); fail(r.msg); if (c.pin && r.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); return; }
+    if (!r.ok) { F.clearErr(); if (r.field) F.mark(r.field, ''); fail(r.msg); if ((c.pin || F.f.pin) && r.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); return; }
     F.dirty = false; m.close();
     const msg = typeof c.ok === 'function' ? c.ok(r, v) : (c.ok || (r.approvalId ? T.sentForApproval : T.saved));
     if (msg) notify(msg, r.approvalId ? 'warn' : 'ok');
+    if (r.serialPlaceholder === 'Y' && r.msg) notify(r.msg, 'warn'); /* round 1 B4 (R1A-13): a placeholder serial was stored as no serial */
     if (c.after) c.after(r, v);
     if (c.refresh !== false) refresh();
   }
@@ -369,7 +376,8 @@ function listView(root, c) {
     st.last = r; if (reset && c.onData) c.onData(r);
     draw(); return true;
   }
-  async function allRows() { while (st.rows.length < st.total) { if (!(await fetchPage(false))) break; } return st.rows; }
+  /* every page; a page that fails leaves the list incomplete - that is said out loud (round 1 B2, R1B-11) */
+  async function allRows() { while (st.rows.length < st.total) { if (!(await fetchPage(false))) break; } if (st.rows.length < st.total) notify(fmt(T.listPartial, { x: st.rows.length.toLocaleString('en-IN'), y: st.total.toLocaleString('en-IN') }), 'bad'); return st.rows; }
   function sortRows() {
     if (st.sortCol < 0) return; const col = cols[st.sortCol];
     const key = r => { const v = col.sv ? col.sv(r) : cellText(col, r); return typeof v === 'number' ? v : String(v).toLowerCase(); };
@@ -388,7 +396,7 @@ function listView(root, c) {
     qIn.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.repeat) { clearTimeout(deb); st.q = qIn.value.trim(); fetchPage(true); } }); }
   if (F) F.el.addEventListener('change', () => fetchPage(true));
   fetchPage(true);
-  return { reload: () => { const keep = window.scrollY; return fetchPage(true).then(() => window.scrollTo(0, keep)); }, rows: () => st.rows, last: () => st.last, filters: F };
+  return { reload: () => { const keep = window.scrollY; return fetchPage(true).then(() => window.scrollTo(0, keep)); }, rows: () => st.rows, allRows, total: () => st.total, last: () => st.last, filters: F };
 }
 
 /* ================= camera scanning ================= */

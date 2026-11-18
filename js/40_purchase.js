@@ -245,6 +245,7 @@ VIEWS.receive = {
           [{ k: 'note', l: T.fNote, t: 'area', max: 300 }]), { sticker: preSticker }, async v => {
           const d = Object.assign(stripSpec(v), srcData(v)); delete d.source; d.checklist = {}; ckCodes.forEach(c => { d.checklist[c] = v['ck_' + c]; delete d['ck_' + c]; });
           const r = await callConfirmed('receive.laptopNoScan', d);
+          if (r.ok && r.serialPlaceholder === 'Y' && r.msg) notify(r.msg, 'warn'); /* round 1 B4 (R1A-13) */
           if (r.ok) r.done = line => said(fmt(r.approvalId ? T.rcSavedPending : T.rcSavedOk, { id: r.id, result: lbl('RECEIPT', r.result) }), r.approvalId ? 'warn' : 'ok', line);
           return r;
         });
