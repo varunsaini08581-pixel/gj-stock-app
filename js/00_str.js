@@ -1,7 +1,7 @@
 /* GJ App v4 — string table (STR). All user-visible text lives in T (interface text) and C (labels of codes, SPEC section 3).
    Other script files add their own section to T with Object.assign(T, {...}). Nothing in the app branches on label text. */
 'use strict';
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '4.0.4'; /* 4.0.4: CASH-OFF - the cash day close can be switched off on the server (Day money screen, dismiss of cash requests); P1: request IDs kept by api() (2.G); 4.0.2: RVR22 + RVRP fixes (money choice, cash link, request ID per user); 4.0.3: RVV (a manager's cash link is sent for the owner's approval) - after this app is on GitHub Pages run raiseMinAppVersion() once */
 const PROTOCOL_VERSION = 4;
 
 /* ---------- C: code -> label (SPEC section 3). Hindi in brackets only where section 3 marks it. ---------- */
@@ -50,7 +50,7 @@ const C = {
   PROBLEM: { DISPLAY: 'Display', KEYBOARD: 'Keyboard', BATTERY: 'Battery', CHARGING_PORT: 'Charging / port', HINGE_BODY: 'Hinge / body', MOTHERBOARD_DEAD: 'Motherboard / dead', SOFTWARE: 'Windows / software', SLOW_UPGRADE: 'Slow / upgrade', WATER_DAMAGE: 'Water damage', SPEAKER_MIC: 'Speaker / microphone', TOUCHPAD: 'Touchpad', WIFI_BT: 'Wi-Fi / Bluetooth', OTHER: 'Other' },
   RECEIVED_WITH: { CHARGER: 'Charger', BAG: 'Bag', BATTERY: 'Battery', OTHER: 'Other' },
   INTAKE: { PENDRIVE: 'Pendrive scan', NO_SCAN: 'No scan', LATE: 'Scanned later' },
-  DELIVERY_SCAN: { SAME: 'No change', CHANGED: 'Hardware changed', EXPLAINED: 'Change matches recorded parts', NOT_COMPARED: 'No intake scan to compare', NONE: 'Not scanned' },
+  DELIVERY_SCAN: { SAME: 'No change', CHANGED: 'Hardware changed', EXPLAINED: 'Change matches recorded parts', REJECTED: 'Change not accepted - scan again', NOT_COMPARED: 'No intake scan to compare', NONE: 'Not scanned' },
   JOB_EVENT: { CREATED: 'Job created', ABANDONED: 'Closed as abandoned', EDITED: 'Details edited', STATUS: 'Status changed', ESTIMATE: 'Estimate added', TECH_CHANGED: 'Technician changed', PART_FITTED: 'Part fitted', PART_UNDONE: 'Part fitting undone', PART_PULLED: 'Part pulled', CHARGE_ADDED: 'Charge added', SENT_OUT: 'Sent outside', BACK_IN: 'Returned from outside', DELIVERY_SCAN: 'Delivery scan', SNAPSHOT_LATE: 'Scanned after intake', SLIP_SENT: 'Slip sent', REMINDER: 'Reminder call', DELIVERED: 'Delivered to customer', CANCELLED: 'Cancelled', REOPENED: 'Reopened', STICKER_CHANGED: 'Sticker changed', DUES_SALE: 'Sold for the amount due', ABANDON_UNDONE: 'Abandon decision undone by the owner' },
   ZERO_REASON: { GJ_WARRANTY: 'GJ warranty', REPAIR_WARRANTY: 'Repair warranty', GOODWILL: 'Goodwill', NOT_REPAIRED: 'Not repaired' },
   JOB_LINE: { OTHER_CHARGE: 'Other charge', CHARGE: 'Other charge', CUSTOMER_PART: "Customer's own part", OUTSIDE_WORK: 'Outside work' },

@@ -287,7 +287,7 @@ function parcelPane(root) {
   const err = h('div', { class: 'errbox', role: 'alert', hidden: true }), listBox = h('div');
   const b = btn(T.pcSave, async () => {
     if (b.dataset.busy) return; err.hidden = true; const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; }
-    b.dataset.busy = '1'; b.disabled = true; const r = await api('parcel.log', F.get()); delete b.dataset.busy; b.disabled = false;
+    b.dataset.busy = '1'; b.disabled = true; const r = await callConfirmed('parcel.log', F.get()); /* P1 (2.G, R5B-06): the request ID of this dialog is kept after a lost reply */ delete b.dataset.busy; b.disabled = false;
     if (!r.ok) { err.textContent = r.msg; err.hidden = false; return; }
     notify(T.pcSaved, 'ok'); F.reset(); S.dirty = false; reload();
   }, '', { id: 'parcelSave' });

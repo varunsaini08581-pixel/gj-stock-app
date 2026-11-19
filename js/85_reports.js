@@ -107,8 +107,8 @@ function drawReport(box, rep, title, raw) {
 }
 
 /* ---- fix round 5: cash book and day close (R5money-03) ---- */
-Object.assign(T, { tDayClose: 'Cash and day close', dcTitle: 'Cash and day close', dcOut: 'Record cash paid out', dcClose: 'Close the day', dcOutTitle: 'Cash paid out', dcOutIntro: 'Every rupee that leaves the drawer is recorded here: a vendor payment, a shop expense, cash handed to the owner or taken to the bank.',
-  dcKind: 'Paid for', dcAmount: 'Amount', dcMode: 'Paid from', dcNote: 'What for', dcRef: 'Bill / reference', dcSaved: 'Cash entry saved', dcCloseTitle: 'Close the day - {date}', dcCloseIntro: 'Count the cash in the drawer and read today\'s UPI total in the merchant app. The owner is told the difference from what the system expects.',
+Object.assign(T, { tDayClose: 'Cash and day close', dcTitle: 'Cash and day close', dcOut: 'Record cash in / out', dcClose: 'Close the day', dcOutTitle: 'Cash paid out or put in', dcOutIntro: 'Every rupee that leaves the drawer is recorded here: a vendor payment, a shop expense, cash handed to the owner or taken to the bank. Cash put into the drawer (owner or manager) is recorded here too.',
+  dcKind: 'Kind of entry', dcAmount: 'Amount', dcMode: 'Mode', dcNote: 'What for / why', dcRef: 'Bill / reference', dcSaved: 'Cash entry saved', dcCloseTitle: 'Close the day - {date}', dcCloseIntro: 'Count the cash in the drawer and read today\'s UPI total in the merchant app. The owner is told the difference from what the system expects.',
   dcCounted: 'Cash counted in the drawer', dcUpiSeen: 'UPI total in the merchant app', dcHanded: 'Cash handed over now (0 if none)', dcHandedTo: 'Handed to', dcCloseNote: 'Note (required when there is a difference)', dcClosed: 'Day closed. Cash: {cash}; UPI: {upi}.', dcMatches: 'matches', dcShort: '{amount} short', dcOver: '{amount} more than expected',
   dcExpected: 'Cash expected in the drawer', dcOpening: 'Cash left at the last close', dcNetToday: 'Cash received today (net)', dcUpiExp: 'UPI expected', dcPaidOut: 'Cash paid out today', dcNotTallied: 'Entries without a clear pay mode (not in the tally)', dcStatus: 'Day close', dcNotDone: 'Not done yet', dcDoneBy: 'Closed by {by} at {at} - cash difference {cash}, UPI difference {upi}',
   dcEntries: 'Cash paid out today', dcVendors: 'Paid to outside vendors (from the laptops that came back)', dcNoEntries: 'No cash paid out today.', dcMine: 'Your cash entries of today', kKind: 'Kind', kBy: 'By', kTime: 'Time', kNote: 'For', kPartner: 'Vendor', kItem: 'Item',
@@ -116,7 +116,7 @@ Object.assign(T, { tDayClose: 'Cash and day close', dcTitle: 'Cash and day close
   ptScrap: 'Scrap', ptScrapIntro: 'Scrap this faulty part only with the part in your hand. The owner is told.', bSight: 'Record sighting', sgTitle: 'Sighting of {id}', sgIntro: 'This laptop cannot be scanned. Look at it and tick what is present.', sgRam: 'RAM present', sgDisk: 'Disk present', sgScreen: 'Screen present', sgBattery: 'Battery present', sgNote: 'Note (required when something is missing)', sgDone: 'Sighting recorded', sgMissing: 'Sighting recorded - the owner has been told what is missing',
   cfOutsideCharge: 'Outside charge alert above (Rs) - {reason}', usOwnDevices: 'May sign in only on (empty = any approved device)' });
 Object.assign(C.TODO, { PARTS_COUNT_DUE: 'Parts count is due - last count {days} days ago', EXEMPT_SIGHT: '{n} laptops that cannot be scanned are waiting for a sighting', DAY_CLOSE: 'Close the day: count the cash and enter the UPI total' });
-C.CASH_KIND = { EXPENSE: 'Shop expense', VENDOR: 'Vendor payment', TO_OWNER: 'Handed to the owner', BANK: 'Deposited in the bank', HANDOVER: 'Handed over at the first close of the day', PART_REFUND: 'Refund for a part taken back' }; /* fix round 7: two kinds the server writes itself (R7combo-04 / -03) */
+C.CASH_KIND = { EXPENSE: 'Shop expense', VENDOR: 'Vendor payment', TO_OWNER: 'Handed to the owner', BANK: 'Deposited in the bank', HANDOVER: 'Handed over at the first close of the day', PART_REFUND: 'Refund for a part taken back', CASH_IN: 'Cash put into the drawer', MOVED_IN: 'Counted at this close (entered on a later day)', MOVED_OUT: 'Already counted at an earlier close' }; /* R22-05 / R22-01 */ /* fix round 7: two kinds the server writes itself (R7combo-04 / -03) */
 HOME_TILES.push(['dayclose', 'tDayClose', () => has('cash.out')]);
 function cashDiffText(v) { v = Number(v) || 0; return v === 0 ? T.dcMatches : fmt(v < 0 ? T.dcShort : T.dcOver, { amount: money(Math.abs(v)) }); }
 /* fix round 6: the count is blind (R6diff-08) - no expected amount before the close; the view can show and close an earlier open day
@@ -125,13 +125,18 @@ Object.assign(T, { dcCloseIntro: 'Count the cash in the drawer now and read the 
   dcDay: 'Day', dcShowDay: 'Show day', dcCloseDate: 'Close for the day', dcUpiSeenDays: 'UPI total in the merchant app for {days}', dcBlind: 'The expected cash and UPI are shown after the day is closed.',
   dcTakesIn: 'This close also takes in the days that were not closed: {days}. Add their UPI totals to the UPI figure.', dcOpenDay: '{date} was not closed. Close it first (before today\'s first sale if you can), or close today - the close takes that day in.',
   dcCovered: 'This day was not closed on its own: it is inside the close of {date}.', dcLate: 'Money recorded on days already closed (inside the expected cash)', dcAfter: 'Recorded after this close (goes into the next close)', dcUpiRefunds: 'UPI refunds given (check the bank)',
-  dcOutRefVendor: 'Laptop / job number or bill (for a vendor: GJ-... or RJ-..., so the payment is tied to the work)', dcCountedNow: 'Cash counted in the drawer now', dcCloseOlder: 'Close {date}' });
+  dcOutRefVendor: 'Laptop / job number or bill (for a vendor: GJ-... or RJ-..., so the payment is tied to the work)', dcCountedNow: 'Cash counted in the drawer now', dcCloseOlder: 'Close {date}',
+  dcLink: 'Counted at an earlier close', dcLinkTitle: 'Money already counted at an earlier close', dcLinkIntro: 'Use this when a sale or repair delivery is entered today, but its cash was already in the drawer at the close of an earlier day (that close found extra cash). The money then belongs to that close and is not expected again today. Only before today\'s close, only for a sale or job entered after that close and paid in cash, and at most its cash. A link by anyone but the owner is reported to the owner at once.',
+  dcLinkDay: 'Day the cash was in the drawer', dcLinkRef: 'Sale or job number (SL-... or RJ-...)', dcLinked: 'Linked to the close of {date}', dcOutAbove: 'Saved. This payout is more than the cash the drawer should hold - the owner has been told. Record cash put into the drawer if that happened.' });
 VIEWS.dayclose = {
   title: T.dcTitle, perm: () => has('cash.out'),
   render(root) {
     const mgr = has('cash.close'); let cur = null, day = todayISO();
-    const outDlg = () => actionDialog({ title: T.dcOutTitle, intro: T.dcOutIntro, action: 'cash.out', fields: [{ k: 'kind', l: T.dcKind, t: 'sel', req: true, placeholder: true, o: () => opts('CASH_KIND', mgr ? null : ['EXPENSE', 'VENDOR']) }, { k: 'amount', l: T.dcAmount, t: 'money', req: true, min: 1 },
-      { k: 'mode', l: T.dcMode, t: 'sel', req: true, o: payOpts1, dflt: 'CASH' }, { k: 'note', l: T.dcNote, req: true, max: 200, wide: true }, { k: 'ref', l: T.dcOutRefVendor, max: 60, wide: true }], ok: T.dcSaved });
+    const outDlg = () => actionDialog({ title: T.dcOutTitle, intro: T.dcOutIntro, action: 'cash.out', fields: [{ k: 'kind', l: T.dcKind, t: 'sel', req: true, placeholder: true, o: () => opts('CASH_KIND', mgr ? ['EXPENSE', 'VENDOR', 'TO_OWNER', 'BANK', 'CASH_IN'] : ['EXPENSE', 'VENDOR']) }, { k: 'amount', l: T.dcAmount, t: 'money', req: true, min: 1 },
+      { k: 'mode', l: T.dcMode, t: 'sel', req: true, o: payOpts1, dflt: 'CASH' }, { k: 'note', l: T.dcNote, req: true, max: 200, wide: true }, { k: 'ref', l: T.dcOutRefVendor, max: 60, wide: true }], ok: r => ((r.warnings || []).indexOf('CASH_OUT_ABOVE_DRAWER') >= 0 ? T.dcOutAbove : T.dcSaved) });
+    /* R22-01: money entered today that was already counted as extra cash at an earlier close (a delivery or sale entered late) */
+    const linkDlg = () => actionDialog({ title: T.dcLinkTitle, intro: T.dcLinkIntro, action: 'cash.link', fields: [{ k: 'day', l: T.dcLinkDay, t: 'date', req: true, maxToday: true }, { k: 'amount', l: T.dcAmount, t: 'money', req: true, min: 1 },
+      { k: 'ref', l: T.dcLinkRef, req: true, max: 60 }, { k: 'note', l: T.dcNote, max: 200, wide: true }], ok: r => (r.approvalId ? (r.msg || T.sentForApproval) : fmt(T.dcLinked, { date: fmtDate(r.closeDay) })) }); /* RVV: the manager's link is an owner approval */
     const closeDlg = (forDay) => {
       const d0 = forDay || todayISO(), days = cur && cur.date === d0 && (cur.upiDays || []).length ? cur.upiDays.map(fmtDate).join(' + ') : fmtDate(d0), skipped = cur && cur.date === d0 ? (cur.notClosedDays || []) : [];
       actionDialog({ title: fmt(T.dcCloseTitle, { date: fmtDate(d0) }), intro: T.dcCloseIntro, warn: skipped.length ? fmt(T.dcTakesIn, { days: skipped.map(fmtDate).join(', ') }) : null, action: 'cash.close', pin: true, submit: T.dcClose,
@@ -141,7 +146,7 @@ VIEWS.dayclose = {
     };
     const dayIn = h('input', { type: 'date', id: 'cashDay', value: day, max: todayISO(), 'aria-label': T.dcDay });
     dayIn.addEventListener('change', () => { if (dayIn.value && dayIn.value <= todayISO()) { day = dayIn.value; if (S.refresh) S.refresh(); } });
-    viewHead(root, T.dcTitle, [btn(T.dcOut, outDlg, 'sec', { id: 'cashOut' }), mgr ? btn(T.dcClose, () => closeDlg(cur && cur.canClose === 'Y' ? cur.date : todayISO()), '', { id: 'cashClose' }) : null]);
+    viewHead(root, T.dcTitle, [btn(T.dcOut, outDlg, 'sec', { id: 'cashOut' }), mgr ? btn(T.dcLink, linkDlg, 'sec', { id: 'cashLink' }) : null, mgr ? btn(T.dcClose, () => closeDlg(cur && cur.canClose === 'Y' ? cur.date : todayISO()), '', { id: 'cashClose' }) : null]);
     if (mgr) root.appendChild(h('div', { class: 'toolbar' }, h('label', { for: 'cashDay', text: T.dcShowDay + ' ' }), dayIn));
     const out = h('div'); root.appendChild(out);
     S.refresh = load(out, 'cash.day', () => ({ date: day }), (r, box) => {
@@ -161,6 +166,37 @@ VIEWS.dayclose = {
       }
       box.appendChild(h('h3', { text: mgr ? T.dcEntries : T.dcMine }));
       box.appendChild(ent.length ? buildTable([{ k: 'kind', l: T.kKind, v: x => lbl('CASH_KIND', x.kind), main: true }, RC.m('amount', T.dcAmount), { k: 'mode', l: T.dcMode, v: x => lbl('PAY', x.mode) }, RC.t('note', T.kNote), RC.t('by', T.kBy), { k: 'time', l: T.kTime, fmt: v => (v ? fmtDT(v) : '') }], ent) : h('p', { class: 'empty', text: T.dcNoEntries }));
+    });
+  }
+};
+
+/* ---- CASH-OFF (4.0.4, owner decision 19 Nov 2026): the cash day close can be switched off on the server (Config "Cash Close" = N, the
+   default). "Cash and day close" above needs the permission cash.out, which the server gives to nobody while it is off. In its place the owner
+   and the manager get "Day money" (permission cash.summary): the money of a day by mode, read only, computed from the records
+   (report.daySummary) - no count, no expected amount, no alert. With "Cash Close" = Y the old screen is back and this one is hidden. */
+Object.assign(T, { tDayMoney: 'Day money', dmTitle: 'Day money', dmIntro: 'The money of the day from the records: what was received for sales and repairs, and what was given back or paid out, by mode. Read only - nothing is counted or compared here.',
+  dmLine: 'Money', dmCash: 'Cash', dmUpi: 'UPI', dmCard: 'Card', dmBank: 'Bank', dmOther: 'Mode not clear', dmTotal: 'Total',
+  dm_sales: 'Sales received (laptops, accessories, parts, balances collected, advances)', dm_repairs: 'Repairs received (deliveries and job advances)', dm_refunds: 'Refunds given', dm_buybacks: 'Paid for laptops bought or taken in exchange', dm_vendors: 'Paid to outside vendors', dm_otherOut: 'Other payouts in the cash book', dm_net: 'Net money of the day',
+  dmCounts: 'Count of the day', dmBills: 'Bills', dmLaptops: 'Laptops sold', dmRepairs: 'Repairs delivered', dmJobAdv: 'Job advances taken', dmAcc: 'Accessory sales', dmParts: 'Part sales', dmRefundsN: 'Refunds', dmBuybacks: 'Laptops bought or taken in exchange', dmVendorsN: 'Vendor payments', dmDue: 'Balance due on the bills of this day (not received yet)',
+  apCashOff: 'The cash day close is switched off. This request no longer changes anything - dismiss it.', apDismiss: 'Dismiss', apDismissed: 'Request dismissed' });
+HOME_TILES.push(['daymoney', 'tDayMoney', () => has('cash.summary')]);
+VIEWS.daymoney = {
+  title: T.dmTitle, perm: () => has('cash.summary'),
+  render(root) {
+    let day = todayISO();
+    const dayIn = h('input', { type: 'date', id: 'dmDay', value: day, max: todayISO(), 'aria-label': T.dcDay });
+    dayIn.addEventListener('change', () => { if (dayIn.value && dayIn.value <= todayISO()) { day = dayIn.value; if (S.refresh) S.refresh(); } });
+    viewHead(root, T.dmTitle, []);
+    root.appendChild(note(T.dmIntro));
+    root.appendChild(h('div', { class: 'toolbar' }, h('label', { for: 'dmDay', text: T.dcShowDay + ' ' }), dayIn));
+    const out = h('div', { id: 'dmBox' }); root.appendChild(out);
+    S.refresh = load(out, 'report.daySummary', () => ({ date: day }), (r, box) => {
+      const rows = r.rows || [], anyOther = rows.some(x => Number(x.other));
+      const mc = (k, l) => ({ k, l, num: true, v: x => (x.out === 'Y' && Number(x[k]) ? '− ' : '') + money(x[k] || 0) });
+      box.appendChild(buildTable([{ k: 'line', l: T.dmLine, main: true, v: x => T['dm_' + x.line] || humanCode(x.line) }, mc('cash', T.dmCash), mc('upi', T.dmUpi), mc('card', T.dmCard), mc('bank', T.dmBank)].concat(anyOther ? [mc('other', T.dmOther)] : [], [mc('total', T.dmTotal)]), rows));
+      const c = r.counts || {}, n = v => String(Number(v) || 0);
+      box.appendChild(h('div', { class: 'card', id: 'dmCounts' }, h('h3', { text: T.dmCounts }), kv([[T.dmBills, n(c.bills)], [T.dmLaptops, n(c.laptopsSold)], [T.dmRepairs, n(c.repairsDelivered)], [T.dmJobAdv, n(c.jobAdvances)], [T.dmAcc, n(c.accessorySales)], [T.dmParts, n(c.partSales)],
+        [T.dmRefundsN, n(c.refunds)], [T.dmBuybacks, n(c.buybacks)], [T.dmVendorsN, n(c.vendorPayments)], Number(r.balanceDueOnBills) ? [T.dmDue, money(r.balanceDueOnBills)] : null])));
     });
   }
 };

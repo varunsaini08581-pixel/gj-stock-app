@@ -121,7 +121,7 @@ function drawJob(box, j, m) {
 function deliverBox(j) {
   const mgr = has('job.deliverNoPin');
   /* fix round 5: paid now = final amount - advance; a mixed payment carries its split; an advance above the bill is settled (refund + mode) */
-  const cancelledJob = j.awaitingReturn === true || j.status === 'CANCELLED', adv5 = Number(j.advance) || 0, fin5 = v => (cancelledJob ? Number(v.finalAmount) || 0 : Number(j.finalAmount) || 0), over5 = v => Math.max(0, adv5 - fin5(v));
+  const cancelledJob = j.awaitingReturn === true || j.status === 'CANCELLED', adv5 = Number(j.held != null && j.held !== '' ? j.held : j.advance) || 0 /* T-fix (R3B-02): what the shop holds, also after an earlier delivery */, fin5 = v => (cancelledJob ? Number(v.finalAmount) || 0 : Number(j.finalAmount) || 0), over5 = v => Math.max(0, adv5 - fin5(v));
   const F = mkForm([{ k: 'billNo', l: T.jbBill, req: true, max: 40 }, cancelledJob ? { k: 'finalAmount', l: T.jbCheckCharge, t: 'money', req: true, min: 0, dflt: 0 } : null, { k: 'payMode', l: T.sePay, t: 'sel', req: true, placeholder: true, o: payOpts },
     { k: 'splitCASH', l: fmt(T.seSplit, { mode: lbl('PAY', 'CASH') }), t: 'money', show: v => v.payMode === 'MIXED' }, { k: 'splitUPI', l: fmt(T.seSplit, { mode: lbl('PAY', 'UPI') }), t: 'money', show: v => v.payMode === 'MIXED' },
     { k: 'splitCARD', l: fmt(T.seSplit, { mode: lbl('PAY', 'CARD') }), t: 'money', show: v => v.payMode === 'MIXED' }, { k: 'splitBANK', l: fmt(T.seSplit, { mode: lbl('PAY', 'BANK') }), t: 'money', show: v => v.payMode === 'MIXED' },

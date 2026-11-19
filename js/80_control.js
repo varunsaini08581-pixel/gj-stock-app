@@ -108,6 +108,15 @@ function openApproval(id) {
       if (p.dataUrl && /^data:image\/(jpeg|png);base64,/.test(p.dataUrl)) ph.appendChild(h('img', { class: 'thumb', src: p.dataUrl, alt: lbl('PHOTO', p.kind) })); }); box.appendChild(ph); }
     if (d.referenceRates) box.appendChild(h('div', { class: 'card' }, h('h3', { text: T.apRates }), kv([[T.apAvg, d.referenceRates.avg != null ? money(d.referenceRates.avg) : ''], [T.apLast, d.referenceRates.last != null ? money(d.referenceRates.last) : '']])));
     if (!pending) return;
+    /* CASH-OFF (4.0.4): a cash link / cash-received request while the cash day close is switched off - only dismissed (owner) */
+    if (yes(a.cashOff)) { box.appendChild(note(T.apCashOff, 'warn')); if (!can) { box.appendChild(note(T.apOwnerOnly, 'warn')); return; }
+      const F0 = mkForm([{ k: 'note', l: T.apNote, t: 'area', max: 300 }, { k: 'pin', l: T.yourPin, t: 'pin', req: true }]), err0 = h('div', { class: 'errbox', role: 'alert', hidden: true }); let busy0 = false;
+      const dismiss = async b => { if (busy0) return; err0.hidden = true; F0.clearErr(); const bad = F0.check(); if (bad) { err0.textContent = bad; err0.hidden = false; return; } const v = F0.get(), data = { id: a.id || id, decision: 'REJECT', pin: v.pin }; if (v.note) data.note = v.note;
+        busy0 = true; b.disabled = true; const x = await callConfirmed('approvals.decide', data); busy0 = false; b.disabled = false; if (x.cancelled) return;
+        if (!x.ok) { if (x.code === 'AUTH_PIN_WRONG') F0.mark('pin', ''); err0.textContent = x.msg; err0.hidden = false; return; }
+        m.close(); notify(x.msg || T.apDismissed, 'ok'); refresh(); reloadLists(); };
+      box.appendChild(h('div', { class: 'card', id: 'apDecide' }, F0.el, err0, h('div', { class: 'btns' }, btn(T.apDismiss, e => dismiss(e.currentTarget), 'sec', { id: 'apDismiss' }))));
+      return; }
     if (!can) { box.appendChild(note(isMine(a.by) ? T.apOwn : T.apOwnerOnly, 'warn')); box.appendChild(h('div', { class: 'btns' }, btn(T.apApprove, null, '', { disabled: true }), btn(T.apReject, null, 'sec', { disabled: true }))); return; }
     const needOutcome = (d.outcomes && d.outcomes.length) || STOCK_OUTCOME_TYPES.indexOf(a.type) >= 0, outcomes = d.outcomes && d.outcomes.length ? d.outcomes : ['ACCEPT', 'RETURN_TO_DEALER', 'VOID'];
     const inputs = (d.inputs || []).map(x => (typeof x === 'string' ? { name: x, required: true } : x)), init = d.values || {};

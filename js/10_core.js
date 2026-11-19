@@ -144,6 +144,27 @@ const Hooks = { lock: null, update: null, pending: null, deviceGone: null, force
 /* fix round 5 (R5access-03): actions that hand out owner-level power are sent with the PIN of the signed-in person - asked in a small dialog */
 const PIN_FIRST = { 'admin.userSave': 1, 'admin.deviceSave': 1, 'admin.pinReset': 1, 'admin.unlock': 1, 'admin.networkAdd': 1, 'alerts.ackType': 1 }; /* fix round 7 (R7sec-09) */
 let _pinMemo = null; /* one PIN entry serves the requests of the next 20 seconds (bulk revoke, a confirm round-trip) */
+/* P1 (FAMILIES 2.G): exactly-once for every save. api() itself makes the request ID from (action + the data without the PIN + a nonce of the
+   dialog or screen it was sent from) and keeps it until the server gave a DEFINITE answer - ok, or a refusal. After an answer that leaves
+   it open whether the save reached the Sheet (no reply: NET; SYS_BUSY after every retry; SYS_ERROR; STORAGE) the next press of the same
+   save in the same dialog sends the SAME request ID, and the server answers with the stored result instead of saving twice (R5B-02: the
+   ID was kept only after NET and only by callConfirmed; R4chaos-10). A new dialog has a new nonce, so the same values typed again on
+   purpose are a new save (the server may still ask "typed twice on purpose?" - CONFIRM_DUPLICATE_ENTRY). */
+const RIDS = new Map(); const RID_KEEP_MS = 6 * 3600000; const RID_OPEN = { NET: 1, SYS_BUSY: 1, SYS_ERROR: 1, STORAGE: 1 };
+function ridJson(v) { if (Array.isArray(v)) return '[' + v.map(ridJson).join(',') + ']'; if (v && typeof v === 'object') return '{' + Object.keys(v).filter(k => k !== 'pin' && v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + ridJson(v[k])).join(',') + '}'; return JSON.stringify(v === undefined ? null : v); }
+function ridScope(o) { if (o && o.scope) return o.scope; const ms = typeof MODALS !== 'undefined' && MODALS.length ? MODALS[MODALS.length - 1] : null; return ms && ms.scope ? ms.scope : 'v' + S.tok; }
+function ridKey(action, data, scope) { return action + '|' + scope + '|' + ridJson(data || {}); }
+/* ridFor: the request ID of this save (the kept one while the last answer was not definite); ridSettle: forget it after a definite answer */
+/* REVP1-05: after a LOST reply (NET - the save may be on the Sheet) the ID is also kept for the same action + data in ANY dialog / screen for
+   RID_NET_MS (as R4chaos-10 did before P1): closing the dialog and typing the same entry again is the usual reaction to "No connection",
+   and it must be answered with the stored result, not saved twice. A definite answer forgets it. */
+const RIDS_NET = new Map(); const RID_NET_MS = 30 * 60000;
+function ridBase(k) { const a = k.indexOf('|'), b = k.indexOf('|', a + 1), u = (S.me && S.me.userId) || ''; return u + '#' + (a < 0 || b < 0 ? k : k.slice(0, a) + k.slice(b)); } /* RVRP-02: per person - a stored reply is only ever replayed to the same user */
+function ridFor(k) { const x = RIDS.get(k); if (x && Date.now() - x.at < RID_KEEP_MS) return x.rid; const n = RIDS_NET.get(ridBase(k)); const rid = n && Date.now() - n.at < RID_NET_MS ? n.rid : crypto.randomUUID(); RIDS.set(k, { rid, at: Date.now() }); if (RIDS.size > 60) RIDS.delete(RIDS.keys().next().value); return rid; }
+function ridSettle(k, r) {
+  if (!r || r.ok || r.cancelled || !(r.code && RID_OPEN[r.code])) { RIDS.delete(k); RIDS_NET.delete(ridBase(k)); return; }
+  const x = RIDS.get(k); if (r.code === 'NET' && x) { RIDS_NET.set(ridBase(k), { rid: x.rid, at: Date.now() }); if (RIDS_NET.size > 30) RIDS_NET.delete(RIDS_NET.keys().next().value); }
+}
 async function api(action, data, o) {
   o = o || {};
   if (PIN_FIRST[action] && !(data && data.pin !== undefined) && typeof pinPrompt === 'function') {
@@ -152,9 +173,16 @@ async function api(action, data, o) {
     _pinMemo = { pin, at: Date.now() }; data = Object.assign({}, data || {}, { pin });
     const r0 = await api(action, data, o); if (!r0.ok && r0.code === 'AUTH_PIN_WRONG') _pinMemo = null; return r0;
   }
-  const rid = o.rid || crypto.randomUUID();
+  const rk = o.rid ? '' : ridKey(action, data, ridScope(o)), rid = o.rid || ridFor(rk);
+  let r = await apiSend(action, data, o, rid);
+  if (rk) ridSettle(rk, r);
+  return r;
+}
+async function apiSend(action, data, o, rid) {
   let r = await Net.send(action, data, { rid, session: o.noSession ? '' : S.token, unsigned: o.unsigned, device: o.device, deviceId: o.deviceId });
   if (r.minApp && cmpVer(APP_VERSION, r.minApp) < 0 || r.code === 'CLIENT_OUTDATED') { if (Hooks.update) Hooks.update(); return r; }
+  /* P1 (2.G): a stored reply too large to keep comes back as {ok, ref, partial}: the screen is loaded again to show the saved state */
+  if (r.ok && r.replayed && r.partial && typeof refresh === 'function') setTimeout(() => { try { refresh(); } catch (e) { /* the next screen shows it */ } }, 0);
   if (r.ok || o.raw) return r;
   if (!r.msg) r.msg = fmt(T.errGeneric, { code: r.code || '?' });
   if (r.code === 'AUTH_SESSION' && S.me && !o.noLock && Hooks.lock) {

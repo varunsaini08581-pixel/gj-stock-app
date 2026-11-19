@@ -43,6 +43,7 @@ function stopCamera() { if (camStop) { try { camStop(); } catch (e) { /* ignore 
 function openModal(o) {
   const m = Object.assign({ closable: true }, o);
   m.prevFocus = document.activeElement;
+  m.scope = 'm' + crypto.randomUUID().slice(0, 8); /* P1 (2.G): the nonce of this dialog - part of the request ID of its saves (api / ridScope) */
   m.titleEl = h('h2', { class: 'modal-title', id: uid('mt'), text: o.title || '' });
   m.body = h('div', { class: 'modal-body' }); m.foot = h('div', { class: 'modal-foot' });
   m.x = h('button', { type: 'button', class: 'btn ghost modal-x', 'aria-label': T.close, text: '✕', onclick: () => m.requestClose() });
@@ -205,15 +206,19 @@ function mkForm(fields, init, fo) {
 Object.assign(T, { serialIsSticker: 'A sticker number was entered as the serial number.' });
 
 /* Sends an action and walks the user through CONFIRM_* questions (the server names the key; the app never guesses). */
-/* R4chaos-10: when every retry of a save failed on the network, pressing Save again with the same data re-uses the request ID, so the server
-   answers the stored result of an entry that did reach it instead of saving it twice */
-const NET_RIDS = new Map();
+/* R4chaos-10 / P1 (2.G): the request ID is the one api() keeps for this action + data in this dialog (ridFor): after an answer that leaves
+   it open whether the save reached the Sheet (NET, SYS_BUSY, SYS_ERROR - in ANY round, also a confirm round) pressing Save again with the
+   same data re-uses it, so the server answers the stored result of an entry that did reach it instead of saving it twice. A definite answer
+   (saved, refused, cancelled) forgets it. Confirm rounds use rid + '-c', the PIN round rid + '-p', as before. */
 async function callConfirmed(action, data) {
-  const nk = action + '|' + JSON.stringify(data || {});
-  let rid = NET_RIDS.get(nk) || crypto.randomUUID(), d = data;
+  const rk = ridKey(action, data, ridScope());
+  let rid = ridFor(rk), d = data, r = null;
+  try { r = await confirmLoop(action, d, rid); return r; } finally { ridSettle(rk, r); }
+}
+async function confirmLoop(action, data, rid) {
+  let d = data;
   for (let i = 0; i < 6; i++) {
     const r = await api(action, d, { rid });
-    if (i === 0) { if (r.code === 'NET') { NET_RIDS.set(nk, rid); if (NET_RIDS.size > 30) NET_RIDS.delete(NET_RIDS.keys().next().value); } else NET_RIDS.delete(nk); }
     /* review F3: an owner override needs the PIN again - ask for it and send the same request again (once) */
     if (!r.ok && r.code === 'OVERRIDE_PIN_NEEDED' && !(d && d.pin) && typeof pinPrompt === 'function') {
       const pin = await pinPrompt(r.msg || T.pinAskIntro);

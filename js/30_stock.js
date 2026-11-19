@@ -274,10 +274,14 @@ VIEWS.bulk = {
     async function send(rows, b) {
       if (!rows.length) { notify(T.buNoChange, 'ok'); return null; }
       b.disabled = true; let ok = 0, bad = 0; const results = [];
-      for (let i = 0; i < rows.length; i += 100) {
-        const r = await api('stock.bulkEdit', { rows: rows.slice(i, i + 100), replace: replace.val('replace') });
+      /* REVP1-10: a part the server finds too large to save safely in one go (SAVE_TOO_LARGE - nothing of it was saved) is sent again in
+         halves, down to one laptop: an everyday bulk edit is never refused because of long notes */
+      for (let i = 0; i < rows.length;) {
+        let n = Math.min(100, rows.length - i), r;
+        for (;;) { r = await api('stock.bulkEdit', { rows: rows.slice(i, i + n), replace: replace.val('replace') }); if (r && !r.ok && r.code === 'SAVE_TOO_LARGE' && n > 1) { n = Math.ceil(n / 2); continue; } break; }
         if (!r.ok) { notify(r.msg, 'bad'); b.disabled = false; return null; }
         (r.results || []).forEach(x => { results.push(x); if (x.ok === true || x.ok === 'Y') ok++; else bad++; });
+        i += n;
       }
       b.disabled = false; notify(fmt(T.buSavedN, { ok, bad }), bad ? 'warn' : 'ok'); return results;
     }
