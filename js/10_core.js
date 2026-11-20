@@ -166,8 +166,15 @@ function ridBase(k) { const a = k.indexOf('|'), b = k.indexOf('|', a + 1), u = (
 function ridFor(k) { const x = RIDS.get(k); if (x && Date.now() - x.at < RID_KEEP_MS) return x.rid; const n = RIDS_NET.get(ridBase(k)); const rid = n && Date.now() - n.at < RID_NET_MS ? n.rid : crypto.randomUUID(); RIDS.set(k, { rid, at: Date.now() }); if (RIDS.size > 60) RIDS.delete(RIDS.keys().next().value); return rid; }
 function ridSettle(k, r) {
   if (!r || r.ok || r.cancelled || !(r.code && RID_OPEN[r.code])) { RIDS.delete(k); RIDS_NET.delete(ridBase(k)); return; }
+  if (RidWatch.list) RidWatch.list.push(k); /* R37B-01: the form that sent this save keeps the key of an answer that left it open */
   const x = RIDS.get(k); if (r.code === 'NET' && x) { RIDS_NET.set(ridBase(k), { rid: x.rid, at: Date.now() }); if (RIDS_NET.size > 30) RIDS_NET.delete(RIDS_NET.keys().next().value); }
 }
+/* R37B-01: after an answer that left it open whether the save reached the Sheet the FORM is locked (unsureGuard, 12_ui.js): it resends
+   exactly the same entry under the same request ID. RidWatch collects the keys left open while one form's save runs; ridPin puts the
+   kept ID back (it never expires while the locked form is on the screen); ridForget is the explicit "Start a new entry" (a NEW ID). */
+const RidWatch = { list: null };
+function ridPin(k, rid) { RIDS.delete(k); RIDS.set(k, { rid, at: Date.now() }); }
+function ridForget(keys) { (keys || []).forEach(k => { RIDS.delete(k); RIDS_NET.delete(ridBase(k)); }); }
 async function api(action, data, o) {
   o = o || {};
   if (PIN_FIRST[action] && !(data && data.pin !== undefined) && typeof pinPrompt === 'function') {

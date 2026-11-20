@@ -144,12 +144,13 @@ function newPoDialog() {
     for (let i = 0; i < rows.length; i++) { const e = rows[i].F.check(); if (e) { err.textContent = fmt(T.poLineBad, { n: i + 1 }) + ' ' + e; err.hidden = false; return; } }
     const data = Object.assign(head.get(), { lines: rows.map(r => lineData(r.F.get())) });
     save.dataset.busy = '1'; save.disabled = true;
-    const r = await callConfirmed('po.create', data);
+    const r = await U.run(() => callConfirmed('po.create', data), save); /* R37B-01 */
     delete save.dataset.busy; save.disabled = false;
     if (r.cancelled) return;
     if (!r.ok) { err.textContent = r.msg; err.hidden = false; return; }
     head.dirty = false; rows.forEach(x => { x.F.dirty = false; }); m.close(); notify(fmt(T.poCreated, { po: r.poNo }), 'ok'); refresh();
   }, '', { id: 'poSave' });
+  const U = unsureGuard(err, () => [m.body]); /* R37B-01: after an unsure answer the PO form is locked and the same PO is sent again */
   append(m.body, [head.el, h('div', { class: 'sect' }, h('h3', { text: T.poLines }), btn(T.lnAdd, addLine, 'sec sm', { id: 'poAddLine' })), linesEl]);
   append(m.foot, [err, h('div', { class: 'foot-btns' }, btn(T.cancel, () => m.requestClose(), 'sec'), save)]);
   addLine();
@@ -221,9 +222,10 @@ VIEWS.receive = {
     function drawLines() { clear(linesBox); linesBox.appendChild(h('h2', { text: T.rcOpenLines })); linesBox.appendChild(simpleTable([{ k: 'poNo', l: T.poNo, main: true }, { k: 'line', l: T.lnNo }, { k: 'dealerName', l: T.poDealer }, { k: 'type', l: T.lnType, v: l => lbl('PO_LINE', l.type) }, { k: 'spec', l: T.lnItem, main: true, v: l => lineText(l) }, { k: 'qty', l: T.lnQty, num: true }, { k: 'receivedGood', l: T.lnGood, num: true }], lines, { empty: T.rcNoLines })); }
     function formPane(fields, init, submit) {
       clear(pane); const F = mkForm(fields, init), err = h('div', { class: 'errbox', role: 'alert', hidden: true });
+      const U = unsureGuard(err, () => [pane, tabs]); /* R37B-01: after an unsure answer the receive form (and its tabs) is locked; Save sends the same receipt again */
       const b = btn(T.rcSave, async () => {
         if (b.dataset.busy) return; err.hidden = true; const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; }
-        b.dataset.busy = '1'; b.disabled = true; const v = F.get(); const r = await submit(v);
+        b.dataset.busy = '1'; b.disabled = true; const v = F.get(); const r = await U.run(() => submit(v), b);
         delete b.dataset.busy; b.disabled = false;
         if (!r || r.cancelled) return;
         if (!r.ok) { F.clearErr(); if (r.field) F.mark(r.field, ''); err.textContent = r.msg; err.hidden = false; return; }
@@ -289,10 +291,11 @@ function parcelPane(root) {
   F.el.addEventListener('input', () => { S.dirty = true; }); F.el.addEventListener('change', () => { S.dirty = true; }); /* R31C-08: typed parcel details are unsaved work (no update reload) */
   const b = btn(T.pcSave, async () => {
     if (b.dataset.busy) return; err.hidden = true; const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; }
-    b.dataset.busy = '1'; b.disabled = true; const r = await callConfirmed('parcel.log', F.get()); /* P1 (2.G, R5B-06): the request ID of this dialog is kept after a lost reply */ delete b.dataset.busy; b.disabled = false;
+    const pv = F.get(); b.dataset.busy = '1'; b.disabled = true; const r = await U.run(() => callConfirmed('parcel.log', pv), b); /* R37B-01: locked after an unsure answer; P1 (2.G, R5B-06): the request ID of this dialog is kept after a lost reply */ delete b.dataset.busy; b.disabled = false;
     if (!r.ok) { err.textContent = r.msg; err.hidden = false; return; }
     notify(T.pcSaved, 'ok'); F.reset(); S.dirty = false; reload();
   }, '', { id: 'parcelSave' });
+  const U = unsureGuard(err, () => [F.el]); /* R37B-01 */
   append(root, [h('div', { class: 'card' }, h('p', { class: 'intro', text: T.pcIntro }), F.el, err, h('div', { class: 'btns' }, b)), h('h2', { text: T.pcList }), listBox]);
   const reload = load(listBox, 'parcel.list', {}, (r, box) => {
     box.appendChild(simpleTable([{ k: 'parcelId', l: T.cRef, main: true }, { k: 'dealerName', l: T.fDealer, main: true }, { k: 'boxes', l: T.pcBoxes, num: true }, { k: 'awb', l: T.pcAwb }, { k: 'condition', l: T.pcCond }, { k: 'at', l: T.cAt, fmt: fmtDT }, { k: 'by', l: T.pcBy, fmt: userName },

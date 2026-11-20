@@ -92,10 +92,11 @@ function drawJob(box, j, m) {
         { k: 'zeroReason', l: T.jbZeroReason, t: 'sel', o: opts('ZERO_REASON'), show: v => v.finalAmount === 0 }, { k: 'amountReason', l: T.jbAmountReason, max: 200 }, { k: 'note', l: T.jbNote, t: 'area', max: 300 }],
       { status: j.status, promisedDate: j.promisedDate, finalAmount: j.finalAmount, zeroReason: j.zeroReason });
       const err = h('div', { class: 'errbox', role: 'alert', hidden: true });
+      const U = unsureGuard(err, () => [F.el]); /* R37B-01: the update boxes are locked after an unsure answer; Save sends the same change again */
       const sb = btn(T.save, async () => {
         if (sb.dataset.busy) return; err.hidden = true; const ch = F.changed();
         if (!Object.keys(ch).length) { notify(T.jbNothing, 'ok'); return; }
-        sb.dataset.busy = '1'; sb.disabled = true; const r = await callConfirmed('job.update', Object.assign({ id: j.id }, ch)); delete sb.dataset.busy; sb.disabled = false;
+        sb.dataset.busy = '1'; sb.disabled = true; const r = await U.run(() => callConfirmed('job.update', Object.assign({ id: j.id }, ch)), sb); /* R37B-01 */ delete sb.dataset.busy; sb.disabled = false;
         if (r.cancelled) return; if (!r.ok) { if (r.field) F.mark(r.field, ''); err.textContent = r.msg; err.hidden = false; return; }
         notify(T.jbUpdated, 'ok'); refresh();
       }, '', { id: 'jobSave' });
@@ -131,6 +132,7 @@ function deliverBox(j) {
     { k: 'collName', l: T.jbCollector, max: 60, req: false }, { k: 'collMobile', l: T.jbCollectorMobile, t: 'mobile' }, { k: 'oldPartsReturned', l: T.jbOldParts, t: 'sel', req: true, placeholder: true, o: opts('OLD_PARTS') },
     { k: 'itemsReturned', l: T.jbItemsReturned, t: 'check', req: true }, mgr ? { k: 'noScanReason', l: T.jbNoScanReason, max: 200, wide: true } : null, mgr ? { k: 'partsNotSeenReason', l: T.jbPartsNotSeen, max: 200, wide: true } : null, { k: 'pin', l: T.yourPin, t: 'pin', req: true }].filter(Boolean));
   const err = h('div', { class: 'errbox', role: 'alert', hidden: true });
+  const U = unsureGuard(err, () => [F.el]); /* R37B-01: the delivery boxes are locked after an unsure answer; the button sends the same delivery again */
   const b = btn(T.jbDeliverBtn, async () => {
     if (b.dataset.busy) return; err.hidden = true; const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; }
     const v = F.get();
@@ -140,7 +142,7 @@ function deliverBox(j) {
     if (v.collName) d.collectedBy = { name: v.collName, mobile: v.collMobile }; if (v.noScanReason) d.noScanReason = v.noScanReason; if (v.partsNotSeenReason) d.partsNotSeenReason = v.partsNotSeenReason;
     if (cancelledJob) d.finalAmount = v.finalAmount; if (over5(v) > 0) { d.advanceRefund = v.advanceRefund; d.advanceRefundMode = v.advanceRefundMode; }
     if (v.payMode === 'MIXED') { d.paySplit = {}; ['CASH', 'UPI', 'CARD', 'BANK'].forEach(k => { if (v['split' + k]) d.paySplit[k] = v['split' + k]; }); }
-    b.dataset.busy = '1'; b.disabled = true; const r = await callConfirmed('job.deliver', d); delete b.dataset.busy; b.disabled = false;
+    b.dataset.busy = '1'; b.disabled = true; const r = await U.run(() => callConfirmed('job.deliver', d), b); /* R37B-01 */ delete b.dataset.busy; b.disabled = false;
     if (r.cancelled) return;
     if (!r.ok) { F.clearErr(); if (r.field) F.mark(r.field, ''); if (r.code === 'PICKUP_PIN_WRONG') { F.set('customerPin', ''); F.mark('customerPin', ''); } if (r.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); err.textContent = r.msg; err.hidden = false; return; }
     notify(T.jbDelivered, 'ok'); refresh();

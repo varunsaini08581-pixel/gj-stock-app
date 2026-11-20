@@ -39,6 +39,7 @@ function goBack() { if (navDepth > 0) history.back(); else go('home'); }
 function renderRoute(keepScroll) {
   if (!S.me || S.forcedPin) return;
   const r = parseHash(); let v = VIEWS[r.view]; if (!v) { r.view = 'home'; r.arg = ''; v = VIEWS.home; }
+  if (S.leave) { const f = S.leave; S.leave = null; try { f(); } catch (e) { /* ignore */ } } /* R37B-02: the screen that is left tidies up (an open count is no longer "open on this device") */
   S.route = r; S.tok++; S.dirty = false; S.refresh = null; S.keys = null; S.hold = null; S.typed = false; S.listsWait = false;
   const root = clear($('#view'));
   document.title = v.title ? v.title + ' · ' + T.appName : T.appName;
@@ -78,14 +79,14 @@ window.addEventListener('popstate', () => {
   if (m && (to.view !== S.route.view || to.arg !== S.route.arg)) { closeModal(MODALS[0], 'nav'); S.dirty = false; renderRoute(); return; }   /* a link or typed address while a dialog is open */
   if (m) {
     if (!m.closable) { history.pushState({ modal: MODALS.length }, ''); m.pushed = true; return; }
-    if (m.dirty && m.dirty()) { history.pushState({ modal: MODALS.length }, ''); m.pushed = true; askDiscard().then(y => { if (y) closeModal(m, false); }); return; }
+    if ((m.dirty && m.dirty()) || unsureHeld(m.box)) { history.pushState({ modal: MODALS.length }, ''); m.pushed = true; askDiscard().then(y => { if (y) closeModal(m, false); }); return; }
     closeModal(m, true); return;
   }
   if (S.dirty) { skipPop++; history.forward(); askDiscard().then(y => { if (y) { S.dirty = false; history.back(); } }); return; }
   if (navDepth > 0) navDepth--;
   renderRoute();
 });
-window.addEventListener('beforeunload', e => { if (S.dirty || MODALS.some(m => m.dirty && m.dirty())) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { if (S.dirty || unsureHeld() || MODALS.some(m => m.dirty && m.dirty())) { e.preventDefault(); e.returnValue = ''; } });
 
 /* ================= footer, offline banner, version gate ================= */
 function drawFooter() {
@@ -109,8 +110,29 @@ Hooks.update = showUpdate;
 
 /* ================= idle lock (overlay above the current view; drafts are kept) ================= */
 let idleTimer = null, lockP = null;
-function armIdle() { clearTimeout(idleTimer); if (S.me && !S.locked) idleTimer = setTimeout(() => lockScreen('idle'), Math.max(0.02, Number(S.idleMin) || 15) * 60000); }
-['keydown', 'pointerdown', 'input'].forEach(ev => document.addEventListener(ev, () => { if (S.me && !S.locked) armIdle(); }, true));
+/* R37B-03: the idle lock goes by the WALL CLOCK, not by one timer. A timer does not run while the device sleeps (lid closed, phone screen
+   off), so the old single setTimeout woke up unlocked and the first touch re-armed it. lastAct is the time of the last key / touch;
+   idleCheck() locks when more than the idle limit has passed. It runs when the timer fires, every 15 seconds, when the page becomes
+   visible / gets the focus / is resumed, and BEFORE a key or touch counts as activity - that first touch after a long gap locks the
+   screen and is swallowed (it does not press what is under it). */
+let lastAct = Date.now();
+const idleMs = () => Math.max(0.02, Number(S.idleMin) || 15) * 60000;
+function idleCheck() {
+  if (!S.me || S.locked) return false;
+  const gone = Date.now() - lastAct;
+  if (gone < 0) { lastAct = Date.now(); return false; } /* the clock was set back */
+  if (gone < idleMs()) return false;
+  lockScreen('idle'); return true;
+}
+function armIdle() {
+  clearTimeout(idleTimer); lastAct = Date.now();
+  const tick = () => { if (!S.me || S.locked || idleCheck()) return; idleTimer = setTimeout(tick, Math.max(50, idleMs() - (Date.now() - lastAct))); };
+  if (S.me && !S.locked) idleTimer = setTimeout(tick, idleMs());
+}
+['keydown', 'pointerdown', 'input'].forEach(ev => document.addEventListener(ev, e => { if (!S.me || S.locked) return; if (idleCheck()) { if (e.cancelable) e.preventDefault(); e.stopPropagation(); } else armIdle(); }, true));
+document.addEventListener('visibilitychange', () => { idleCheck(); });
+['focus', 'pageshow', 'resume'].forEach(ev => window.addEventListener(ev, () => { idleCheck(); }));
+setInterval(idleCheck, 15000);
 function lockScreen(reason) {
   if (lockP) return lockP;
   if (!S.me) return Promise.resolve();
@@ -139,6 +161,7 @@ function lockScreen(reason) {
     S.locked = false; document.body.classList.remove('locked'); ov.hidden = true; clear(ov);
     if (!document.body.classList.contains('stale')) { $('#app').inert = false; $('#modals').inert = false; }
     lockP = null; armIdle(); done();
+    try { document.dispatchEvent(new Event('gj:unlock')); } catch (e) { /* ignore */ } /* R37B-04: a screen kept under the lock looks at the date again */
     if (r.mustChangePin) showChangePin(true);
   }
   return lockP;
@@ -152,6 +175,20 @@ function setSession(r) {
 function signOutLocal() { try { sessionStorage.clear(); } catch (e) { /* ignore */ } S.dirty = false; MODALS.forEach(m => { m.dirty = null; }); history.replaceState(null, '', location.pathname + location.search); location.reload(); }
 async function logout(b) { if (b) b.disabled = true; const tok = S.token; S.token = ''; if (tok) await Promise.race([Net.send('auth.logout', {}, { session: tok }), sleep(4000)]); signOutLocal(); }
 
+/* R37B-02: "is a count open in another window of this device?" - asked over a BroadcastChannel before a new version is activated.
+   A window with an open count answers at once; no answer within 400 ms = no count. (No storage is used; a browser without
+   BroadcastChannel only knows its own window.) */
+const COUNT_BC = (() => { try { return typeof BroadcastChannel === 'function' ? new BroadcastChannel('gj-app-count') : null; } catch (e) { return null; } })();
+let countSeen = 0, countAsk = 0;
+if (COUNT_BC) COUNT_BC.onmessage = e => { const m = e && e.data; if (!m || typeof m !== 'object') return; if (m.t === 'COUNT?' && S.countOpen) COUNT_BC.postMessage({ t: 'COUNT!', n: m.n }); else if (m.t === 'COUNT!' && m.n === countAsk) countSeen = m.n; };
+async function countElsewhere() {
+  if (!COUNT_BC) return false;
+  const n = ++countAsk + Math.random(); countAsk = n;
+  try { COUNT_BC.postMessage({ t: 'COUNT?', n }); } catch (e) { return false; }
+  await sleep(400);
+  return countSeen === n;
+}
+
 /* ================= start-up ================= */
 function stage(nodes) { document.body.classList.remove('authed'); const v = clear($('#view')); const c = h('div', { class: 'card stage' }); append(c, nodes); v.appendChild(c); drawFooter(); return c; }
 function fatal(msg) { stage([h('h1', { text: T.appName }), h('p', { class: 'errmsg', text: msg })]); }
@@ -163,24 +200,36 @@ async function boot() {
        "Reload now" on a small bar; only CLIENT_OUTDATED from the server (Hooks.update) shows the blocking update screen. */
     /* R31C-08: idle = no dialog, nothing unsaved (S.dirty), nothing typed on the screen (S.typed), no screen that holds work (S.hold: the
        count while scans are waiting to be sent, the count result). Otherwise only the "Reload now" bar is shown. */
-    const idle = () => !S.dirty && !S.typed && !MODALS.length && !(S.hold && S.hold());
-    const apply = () => { if (waitingReg && waitingReg.waiting) waitingReg.waiting.postMessage({ t: 'SKIP_WAITING', v: APP_VERSION }); }; /* R33C-01: the object form - the new worker ignores the plain string of a 4.0.4 page */
+    const idle = () => !S.dirty && !S.typed && !MODALS.length && !(S.hold && S.hold()) && !S.countOpen && !unsureHeld();
+    /* R37B-02: the new version is never activated while a count is open - on this screen (S.countOpen, S.hold) or in another window
+       of this device (countElsewhere asks the other windows). "Reload now" is refused with a clear message for the same reason. */
+    let applying = false;
+    const apply = async forced => {
+      if (applying || !(waitingReg && waitingReg.waiting)) return; applying = true;
+      try {
+        if (S.countOpen || await countElsewhere()) { if (forced) { wantReload = false; notify(T.updateCountOpen, 'warn'); } return; }
+        if (!forced && !idle()) return; /* something was started while the other windows were asked */
+        if (waitingReg && waitingReg.waiting) waitingReg.waiting.postMessage({ t: 'SKIP_WAITING', v: APP_VERSION }); /* R33C-01: the object form - the new worker ignores the plain string of a 4.0.4 page */
+      } finally { applying = false; }
+    };
+    /* R37B-06: the bar is placed by the class "update-bar" of the stylesheet - the page's CSP (style-src 'self') refuses an inline style,
+       so the old bar sat below the end of the page where nobody saw it */
+    const showBar = onReload => { if (bar) return; bar = h('div', { class: 'toast warn update-bar', role: 'status', id: 'updateBar' }, h('span', { text: T.updateReady }), btn(T.updateReload, onReload, 'ghost')); document.body.appendChild(bar); };
     const offer = reg => {
       if (!reg.waiting || !navigator.serviceWorker.controller) return;
-      waitingReg = reg; if (idle()) { apply(); return; }
-      if (bar) return;
-      bar = h('div', { class: 'toast warn', role: 'status', style: 'position:fixed;left:12px;right:12px;bottom:12px;z-index:50' }, h('span', { text: T.updateReady }), btn(T.updateReload, () => { wantReload = true; if (waitingReg && waitingReg.waiting) apply(); else location.reload(); }, 'ghost'));
-      document.body.appendChild(bar);
+      waitingReg = reg; if (idle()) { apply(false); return; }
+      showBar(() => { wantReload = true; if (waitingReg && waitingReg.waiting) apply(true); else reloadIfNoCount(); });
     };
+    const reloadIfNoCount = async () => { if (S.countOpen || await countElsewhere()) { wantReload = false; notify(T.updateCountOpen, 'warn'); return; } location.reload(); };
     navigator.serviceWorker.register('sw.js').then(reg => {
       offer(reg);
       reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed') offer(reg); }); });
-      setInterval(() => { if (waitingReg && waitingReg.waiting && idle()) apply(); if (changed && idle()) location.reload(); }, 20000);
+      setInterval(() => { if (waitingReg && waitingReg.waiting && idle()) apply(false); if (changed && idle()) location.reload(); }, 20000);
     }).catch(() => {});
     /* another tab may activate the new version: this page reloads only when it is idle (the old screen keeps working until then) */
     let changed = false;
     const t0 = Date.now(); /* a version change while the page is still starting up reloads later (never a reload in the middle of loading) */
-    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) { if (wantReload || (idle() && Date.now() - t0 > 8000)) location.reload(); else if (idle()) changed = true; else { changed = true; if (!bar) { bar = h('div', { class: 'toast warn', role: 'status', style: 'position:fixed;left:12px;right:12px;bottom:12px;z-index:50' }, h('span', { text: T.updateReady }), btn(T.updateReload, () => location.reload(), 'ghost')); document.body.appendChild(bar); } } } had = true; });
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) { if (wantReload || (idle() && Date.now() - t0 > 8000)) location.reload(); else if (idle()) changed = true; else { changed = true; showBar(reloadIfNoCount); } } had = true; });
   }
   if (!Net.configured()) { stage([h('h1', { text: T.setupTitle }), h('p', { text: T.setupMsg })]); return; }
   let dev; try { dev = await Net.device(); } catch (e) { fatal(T.storageBlocked); return; }

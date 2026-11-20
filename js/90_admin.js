@@ -149,8 +149,13 @@ VIEWS.settings = {
         case 'DATES': fd = { k: 'value', l: T.cfNewValue, t: 'area', max: 4000, hint: T.cfDatesHint, dflt: list(s.value).join('\n') }; break;
         default: fd = { k: 'value', l: T.cfNewValue, max: 300, dflt: s.value, wide: true };
       }
+      const verAhead = (st, val) => { if (st.key !== 'Min App Version' && st.key !== 'Min Pendrive Version') return ''; val = String(val || '').trim(); if (!/^\d+\.\d+\.\d+$/.test(val)) return T.cfVerFormat;
+        const app = st.key === 'Min App Version', have = app ? APP_VERSION : (/^\d+\.\d+\.\d+$/.test(String(st.maxVersion || '')) ? st.maxVersion : ''); if (!app && /^\d+\.\d+\.\d+$/.test(String(st.value || '')) && cmpVer(val, st.value) <= 0) return ''; /* RV38-02: lowering the pendrive minimum is always possible (as on the server) */
+        return have && cmpVer(val, have) > 0 ? fmt(app ? T.cfVerAheadApp : T.cfVerAheadPd, { have }) : ''; };
       actionDialog({ title: fmt(T.cfEditTitle, { key: keyLabel(s.key) }), intro: s.note || '', action: 'admin.configSave', pin: true, fields: [fd],
-        validate: v => (s.type === 'TIME' && !/^\d{2}:\d{2}$/.test(v.value || '') ? T.cfBadTime : ((s.type === 'EMAIL' || s.type === 'EMAILS') && v.value && String(v.value).split(',').some(x => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.trim())) ? T.cfBadEmail : (s.type === 'DATES' && String(v.value || '').split(/\n/).some(x => x.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(x.trim())) ? T.cfDatesHint : ''))),
+        /* R37B-05: a minimum version above the app in use (or above the newest pendrive the server knows) would lock every client out,
+           the owner's own app included - refused here and by the server */
+        validate: v => verAhead(s, v.value) || (s.type === 'TIME' && !/^\d{2}:\d{2}$/.test(v.value || '') ? T.cfBadTime : ((s.type === 'EMAIL' || s.type === 'EMAILS') && v.value && String(v.value).split(',').some(x => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.trim())) ? T.cfBadEmail : (s.type === 'DATES' && String(v.value || '').split(/\n/).some(x => x.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(x.trim())) ? T.cfDatesHint : ''))),
         build: v => { let val = v.value === undefined ? '' : v.value; if (s.type === 'LIST' || s.type === 'DATES') { val = String(val).split(/\n/).map(x => x.trim()).filter(Boolean); if (!arr) val = val.join(','); } else if (s.type === 'USERS' && !arr) val = (val || []).join(','); return { key: s.key, value: val }; },
         ok: x => (x.applied === 'N' || x.applied === false ? fmt(T.cfSavedLater, { t: fmtDT(x.pendingFrom) }) : T.cfSaved), after: reloadLists });
     }

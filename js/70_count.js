@@ -27,6 +27,9 @@ const canCount = sec => isMgr() || (S.me && S.me.section === sec);
 VIEWS.count = {
   title: T.ctTitle, perm: () => has('count'),
   render(root, arg) {
+    /* R37B-02: a count that was open on this screen when the page was reloaded (F5, an update, a crash of the browser) opens again on
+       its scan screen, with the scans that were still waiting to be sent - nothing typed by the scanner goes to a start page */
+    const kept = countKept(); if (kept) { countScreen(root, kept); return; }
     viewHead(root, T.ctTitle); root.appendChild(h('p', { class: 'intro', text: T.ctIntro }));
     const startKind = async (b, section, kind) => { const r = await runAction(b, 'count.start', kind === 'DAILY' ? { section } : { section, kind }, { ok: false, refresh: false }); if (r.ok) countScreen(clear($('#view')), { countId: r.countId, section, kind, scanned: r.scanned || 0, items: r.items }); };
     S.refresh = load(root, 'count.today', {}, (r, box) => {
@@ -44,8 +47,21 @@ VIEWS.count = {
     });
   }
 };
+/* R37B-02: the open count of this screen is remembered for this tab (sessionStorage: gone at sign-out and when the tab is closed) - the
+   count ID, what the screen showed and the scans not yet saved. countKept() returns it after a reload for the same person and day. */
+function countKeep(c, unsent) { try { sessionStorage.setItem('gj.count', JSON.stringify({ u: S.me.userId, day: todayISO(), c: { countId: c.countId, section: c.section, kind: c.kind, scanned: c.scanned || 0, items: c.items }, unsent: unsent || [] })); } catch (e) { /* kept in memory only */ } }
+function countDrop() { try { sessionStorage.removeItem('gj.count'); } catch (e) { /* ignore */ } }
+function countKept() {
+  let k = null; try { k = JSON.parse(sessionStorage.getItem('gj.count') || 'null'); } catch (e) { k = null; }
+  if (!k || !k.c || !k.c.countId || !S.me || k.u !== S.me.userId || k.day !== todayISO()) { if (k) countDrop(); return null; }
+  return Object.assign({}, k.c, { unsent: Array.isArray(k.unsent) ? k.unsent : [] });
+}
 function countScreen(root, c) {
   S.refresh = null; S.dirty = false;
+  /* R37B-02: while a count is open on this screen (scan screen, accessory count, result) no new app version is activated and the page
+     is never reloaded - also between two scans, when nothing is waiting to be sent. S.leave runs when the screen is left. */
+  S.countOpen = true; S.hold = () => true; S.leave = () => { S.countOpen = false; countDrop(); };
+  countKeep(c, c.unsent);
   const title = fmt(T.ctScanTitle, { section: lbl('SECTION', c.section), kind: lbl('COUNT_KIND', c.kind) });
   /* R32C-03: Back asks when scans are not saved (failed and waiting for Retry, or still being sent) */
   let unsent = () => 0;
@@ -58,7 +74,8 @@ function countScreen(root, c) {
      failed and waits for Retry (it is shown in red only on this page); S.dirty is set while there is one, so Back, F5 and leaving ask */
   const failed = () => shown.filter(x => x.state === 'bad' && x.retry).length;
   unsent = () => shown.filter(x => x.state === 'wait' || (x.state === 'bad' && x.retry)).length;
-  S.hold = () => running || queue.length > 0 || failed() > 0;
+  /* R37B-02: S.hold stays "true" for the whole count (set at the top of countScreen) */
+  const keep = () => countKeep(Object.assign({}, c, { scanned: Number(big.textContent) || 0 }), shown.filter(x => x.state === 'wait' || (x.state === 'bad' && x.retry)).map(x => ({ code: x.code, input: x.input, sealNo: x.sealNo })));
   function draw() {
     clear(log);
     shown.slice(-8).reverse().forEach(x => {
@@ -69,7 +86,7 @@ function countScreen(root, c) {
       log.appendChild(li);
     });
     const n = queue.length; waitEl.textContent = n ? fmt(T.ctWaiting, { n }) : '';
-    if (root.isConnected) S.dirty = unsent() > 0;
+    if (root.isConnected) { S.dirty = unsent() > 0; keep(); }
   }
   /* Scans are sent strictly one after another; a failed scan stays visible in red with Retry and never blocks the next ones. */
   async function pump() {
@@ -114,7 +131,9 @@ function countScreen(root, c) {
     S.keys = null; S.dirty = false; countResult(clear(root), c, r);
   }, 'sec', { id: 'ctReveal' });
   append(root, [h('div', { class: 'card' }, big, h('p', { class: 'muted num-label', text: T.ctScanned }), h('div', { class: 'scanbox' }, inp, btn(T.camera, () => cameraScan(v => { inp.value = v; submit('CAMERA'); }), 'sec')), waitEl), h('h2', { text: T.ctLast }), log, h('div', { class: 'btns' }, reveal)]);
-  draw(); soon(() => inp.focus());
+  /* R37B-02: scans that were not saved when the page was reloaded are sent again (a scan that did reach the server answers "already scanned") */
+  (c.unsent || []).forEach(u => { if (u && u.code) { const x = { code: String(u.code), input: u.input || 'TYPED', state: 'wait' }; if (u.sealNo) x.sealNo = String(u.sealNo); queue.push(x); shown.push(x); } }); c.unsent = null;
+  draw(); soon(() => inp.focus()); if (queue.length) pump();
 }
 document.addEventListener('keydown', e => { if (S.keys) S.keys(e); });
 function countResult(root, c, r) {
@@ -139,12 +158,20 @@ function countResult(root, c, r) {
     if (notCounted.some(a => ncIn[a.itemId].value === '')) { err.textContent = T.ctAccNeed; err.hidden = false; return; }
     const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; }
     const v = F.get(); b.dataset.busy = '1'; b.disabled = true;
-    for (const a of notCounted) { const q = await api('count.scan', { countId: c.countId, code: a.itemId, itemId: a.itemId, qty: Number(ncIn[a.itemId].value), input: 'TYPED' }); if (!q.ok) { err.textContent = a.item + ': ' + q.msg; err.hidden = false; delete b.dataset.busy; b.disabled = false; return; } }
-    const x = await api('count.close', { countId: c.countId, reasons, noSticker: v.noSticker || 0, pin: v.pin }); delete b.dataset.busy; b.disabled = false;
+    /* R37B-01: after an unsure answer the reasons, quantities and the PIN box are locked and the same close is sent again */
+    /* RV38-04: the retry of a locked form goes on where the first attempt stopped (ncAt = the quantities already saved for sure): after a
+       lost reply of the close ONLY the close is sent again, under its kept request ID - the quantity lines are not sent to the count the
+       server has already closed ("count closed" used to hide the saved result) */
+    let ncAt = 0;
+    const x = await U.run(async () => {
+      for (; ncAt < notCounted.length; ncAt++) { const a = notCounted[ncAt], q = await api('count.scan', { countId: c.countId, code: a.itemId, itemId: a.itemId, qty: Number(ncIn[a.itemId].value), input: 'TYPED' }); if (!q.ok) return Object.assign({}, q, { msg: a.item + ': ' + q.msg }); }
+      return api('count.close', { countId: c.countId, reasons, noSticker: v.noSticker || 0, pin: v.pin });
+    }, b); delete b.dataset.busy; b.disabled = false;
     if (!x.ok) { if (x.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); err.textContent = x.msg; err.hidden = false; return; }
     const s = x.summary || {}; notify(T.ctClosed + ' ' + fmt(T.ctSummary, { expected: s.expected == null ? '–' : s.expected, found: s.found == null ? '–' : s.found, missing: s.missing == null ? missing.length : s.missing, extra: s.extra == null ? extra.length : s.extra }), 'ok');
     renderRoute();
   }, '', { id: 'ctClose' });
+  const U = unsureGuard(err, () => [card]); /* R37B-01 */
   append(card, [F.el, err, h('div', { class: 'btns' }, c.kind === 'ACCESSORY' ? null : btn(T.ctBackToScan, () => countScreen(clear(root), c), 'sec'), b)]);
 }
 function accCount(root, c) {
@@ -157,11 +184,17 @@ function accCount(root, c) {
     if (b.dataset.busy) return; err.hidden = true;
     if (items.some(a => inputs[a.itemId].value === '')) { err.textContent = T.ctAccNeed; err.hidden = false; return; }
     b.dataset.busy = '1'; b.disabled = true;
-    for (const a of items) { const r = await api('count.scan', { countId: c.countId, code: a.itemId, itemId: a.itemId, qty: Number(inputs[a.itemId].value), input: 'TYPED' }); if (!r.ok) { err.textContent = a.item + ': ' + r.msg; err.hidden = false; delete b.dataset.busy; b.disabled = false; return; } }
-    const r = await api('count.reveal', { countId: c.countId }); delete b.dataset.busy; b.disabled = false;
+    /* R37B-01: after an unsure answer the quantities are locked and the same numbers are sent again */
+    /* RV38-04: as in countResult - a retry of the locked form sends only what is not saved for sure (after a lost reply of the reveal: the reveal alone) */
+    let itAt = 0;
+    const r = await U.run(async () => {
+      for (; itAt < items.length; itAt++) { const a = items[itAt], q = await api('count.scan', { countId: c.countId, code: a.itemId, itemId: a.itemId, qty: Number(inputs[a.itemId].value), input: 'TYPED' }); if (!q.ok) return Object.assign({}, q, { msg: a.item + ': ' + q.msg }); }
+      return api('count.reveal', { countId: c.countId });
+    }, b); delete b.dataset.busy; b.disabled = false;
     if (!r.ok) { err.textContent = r.msg; err.hidden = false; return; }
     countResult(clear(root), c, r);
   }, '', { id: 'ctAccSave' });
+  const U = unsureGuard(err, () => [table]); /* R37B-01 */
   append(root, [table, err, h('div', { class: 'btns' }, b)]);
 }
 
@@ -219,11 +252,12 @@ function submitSheetDialog(section) {
     if (b.dataset.busy) return; err.hidden = true; const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; }
     const ack = !F.f.ack.wrap.hidden && F.val('ack') === 'Y';
     if (k !== 0 && !ack) { F.f.ack.wrap.hidden = false; F.mark('ack', ''); err.textContent = T.ssAckNeeded; err.hidden = false; return; }
-    b.dataset.busy = '1'; b.disabled = true;
-    const r = await api('sheet.submit', { section: F.val('section'), ackNotScanned: ack ? 'Y' : 'N', pin: F.val('pin') }); delete b.dataset.busy; b.disabled = false;
+    b.dataset.busy = '1'; b.disabled = true; const sd = { section: F.val('section'), ackNotScanned: ack ? 'Y' : 'N', pin: F.val('pin') };
+    const r = await U.run(() => api('sheet.submit', sd), b); /* R37B-01 */ delete b.dataset.busy; b.disabled = false;
     if (!r.ok) { if (r.code === 'SHEET_ACK_REQUIRED') { F.f.ack.wrap.hidden = false; F.mark('ack', ''); } if (r.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); err.textContent = r.msg; err.hidden = false; return; }
     F.dirty = false; m.close(); notify(r.incomplete === 'Y' && r.msg ? r.msg : (yes(r.sent) ? fmt(T.ssSent, { n: r.laptops == null ? '–' : r.laptops, k: r.notScanned == null ? '–' : r.notScanned }) : T.ssQueued), r.incomplete === 'Y' ? 'warn' : 'ok'); refresh();
   }, '', { id: 'ssSubmit' });
+  const U = unsureGuard(err, () => [F.el]); /* R37B-01 */
   append(m.body, [h('p', { class: 'intro', text: T.ssIntro }), F.el, info]);
   append(m.foot, [err, h('div', { class: 'foot-btns' }, btn(T.cancel, () => m.requestClose(), 'sec'), b)]);
   count();

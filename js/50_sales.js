@@ -83,11 +83,31 @@ VIEWS.sell = {
       { k: 'exchange', l: T.seExchange, t: 'check' }, { k: 'exCustomer', l: T.seExCustomer, max: 60, show: v => v.exchange === 'Y', hint: T.seExNote }, has('exchange.value') ? { k: 'exValue', l: T.seExValue, t: 'money', min: 1, show: v => v.exchange === 'Y', hint: T.seExValueHint } : null, { k: 'pickupLater', l: T.sePickup, t: 'check' },
       { k: 'replacementFor', l: T.seReplFor, t: 'code', sticker: 'GJ', cam: false }, mgr ? { k: 'overrideReason', l: T.seOverride, max: 200, wide: true } : null, { k: 'pin', l: T.yourPin, t: 'pin', req: true }].filter(Boolean));
     F.el.addEventListener('input', () => { S.dirty = true; });
+    /* R37B-04: "Sale date" was filled once, when the screen was drawn - a Sell screen left open overnight (the lock keeps the screen) booked
+       the next morning's sale on yesterday. dateDay = the day on which the box was last set (by the screen or by the person). When the
+       day has changed (server time): a box the person never touched is set to today and says so; a date the person chose is asked about
+       at Save ("Use today's date?"). Checked when the screen is unlocked, shown again or focused, once a minute, and always at Save. */
+    const dateInp = F.f.saleDate.inp; let dateDay = todayISO(), dateTouched = false;
+    const dateTouch = () => { dateTouched = true; dateDay = todayISO(); };
+    dateInp.addEventListener('input', dateTouch); dateInp.addEventListener('change', dateTouch);
+    function freshDate(quiet) {
+      if (!F.el.isConnected) return false; const t = todayISO(); dateInp.max = t;
+      if (t === dateDay || U.held) return true; /* a locked entry is resent exactly as it was */
+      if (dateTouched && F.val('saleDate') !== t) return true; /* chosen by the person: asked at Save */
+      const was = F.val('saleDate'); F.set('saleDate', t); dateDay = t; dateTouched = false;
+      if (was !== t && !quiet) notify(fmt(T.seDateToday, { date: fmtDate(t) }), 'warn');
+      return true;
+    }
+    const dateEv = () => { if (!freshDate()) { document.removeEventListener('gj:unlock', dateEv); document.removeEventListener('visibilitychange', dateEv); window.removeEventListener('focus', dateEv); clearInterval(dateTick); } };
+    document.addEventListener('gj:unlock', dateEv); document.addEventListener('visibilitychange', dateEv); window.addEventListener('focus', dateEv); const dateTick = setInterval(dateEv, 60000);
     function addExtra() { const e = { F: mkForm([{ k: 'itemId', l: T.lnAccItem, t: 'sel', req: true, o: accItemOpts }, { k: 'qty', l: T.seExQty, t: 'int', req: true, min: 1, maxv: 50, dflt: 1 }, { k: 'price', l: T.seExPrice, t: 'money', req: true, min: 0 }], {}, { onChange: drawTotal }) };
       e.el = h('div', { class: 'linerow' }, e.F.el, btn(T.remove, () => { extras.splice(extras.indexOf(e), 1); e.el.remove(); drawTotal(); }, 'sec sm')); extras.push(e); extrasBox.appendChild(e.el); }
     const save = btn(T.seSave, async () => {
       if (save.dataset.busy) return; err.hidden = true;
       const fail = msg => { err.textContent = msg; err.hidden = false; };
+      /* R37B-04: never a sale silently booked on a day that is over */
+      if (!U.held) { freshDate(); const t = todayISO(), sd = F.val('saleDate');
+        if (dateTouched && dateDay !== t && sd && sd !== t) { save.dataset.busy = '1'; const useToday = await confirmBox(fmt(T.seDateAsk, { date: fmtDate(sd), today: fmtDate(t) }), { title: T.seDateAskTitle, yes: T.seDateUseToday, no: fmt(T.seDateKeep, { date: fmtDate(sd) }) }); delete save.dataset.busy; if (!root.isConnected) return; dateDay = todayISO(); if (useToday) { F.set('saleDate', dateDay); dateTouched = false; } } }
       if (!items.length) { fail(T.seNone); scan.focus(); return; }
       for (const x of items) { if (!(Number(digits(x.price.value)) > 0)) { fail(fmt(T.seNeedPrice, { id: x.it.id })); x.price.focus(); return; } }
       const bad = F.check(); if (bad) { fail(bad); return; }
@@ -102,7 +122,7 @@ VIEWS.sell = {
       d.askSetOff = 'Y'; /* round 8: an advance of an ended reservation of this customer is shown before the bill is saved */
       if (v.pickupLater === 'Y') d.pickupLater = 'Y'; if (v.replacementFor) d.replacementFor = v.replacementFor; if (v.overrideReason) d.overrideReason = v.overrideReason;
       save.dataset.busy = '1'; save.disabled = true;
-      const r = await callConfirmed('sale.create', d);
+      const r = await U.run(() => callConfirmed('sale.create', d), save); /* R37B-01: after an unsure answer the whole Sell form is locked and this sends the same sale again */
       delete save.dataset.busy; save.disabled = false;
       if (r.cancelled) return;
       if (!r.ok) { F.clearErr(); if (r.field) F.mark(r.field, ''); if (r.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); fail(r.approvalId ? r.msg + ' ' + T.sentForApproval : r.msg); return; }
@@ -115,6 +135,7 @@ VIEWS.sell = {
         (r.warnings || []).length ? h('div', null, h('h3', { text: T.seWarnings }), chipList('SALE_WARN', r.warnings, 'warn')) : null];
       const m = slipDialog(T.seDoneTitle, lines.join('\n'), v.mobile, extra); m.onClose = () => renderRoute();
     }, '', { id: 'sellSave' });
+    const U = unsureGuard(err, () => $$('.card', root)); /* R37B-01 */
     append(root, [h('div', { class: 'card' }, h('div', { class: 'scanbox' }, scan, btn(T.seAdd, () => addItem(scan.value), 'sec'), btn(T.camera, () => cameraScan(addItem), 'sec')), rowsBox, totalEl),
       h('div', { class: 'card' }, F.el, h('div', { class: 'sect' }, h('h3', { text: T.seExtras }), btn(T.seExtraAdd, addExtra, 'sec sm')), extrasBox, err, h('div', { class: 'btns' }, save))]);
     drawRows(); if (arg) addItem(arg); else soon(() => scan.focus());

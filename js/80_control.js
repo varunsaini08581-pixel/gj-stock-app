@@ -69,16 +69,26 @@ VIEWS.approvals = {
       }
       return { ok: true, results: all, stopped: last.ok ? '' : last.msg };
     };
+    /* R37B-08: "Approve selected" acts only on requests that are in the list NOW (the rows loaded under the current filter) and are
+       ticked; ticks are emptied whenever the filter changes, and the dialog names every request that will be approved */
+    const clearPicked = () => { Object.keys(picked).forEach(k => delete picked[k]); root.querySelectorAll('input[data-pick]').forEach(c => { c.checked = false; }); };
     const bulk = btn(T.apApproveSel, () => {
-      const ids = Object.keys(picked).filter(k => picked[k]); if (!ids.length) { notify(T.apSelNone, 'bad'); return; }
-      actionDialog({ title: fmt(T.apBulkTitle, { n: ids.length }), action: 'approvals.decideMany', pin: true, submit: T.apApprove, fields: [{ k: 'note', l: T.alAckNote, t: 'area', max: 300 }], build: v => Object.assign({ ids: ids }, v), run: runBulk,
+      const rows = lv.rows().filter(r => picked[r.id] && bulkOk(r) && !(r.status && r.status !== 'PENDING')), ids = rows.map(r => r.id); if (!ids.length) { notify(T.apSelNone, 'bad'); return; }
+      const listEl = h('div', { id: 'apBulkList' }, h('p', { class: 'intro', text: T.apBulkList }), h('ul', { class: 'bulk-list' }, rows.map(r => h('li', { dataset: { id: r.id }, text: [r.id, lbl('APPR_TYPE', r.type), r.ref, r.summary].filter(Boolean).join(' — ') }))), h('p', { class: 'hint', text: T.apBulkHidden }));
+      actionDialog({ title: fmt(T.apBulkTitle, { n: ids.length }), intro: listEl, action: 'approvals.decideMany', pin: true, submit: T.apApprove, fields: [{ k: 'note', l: T.alAckNote, t: 'area', max: 300 }], build: v => Object.assign({ ids: ids }, v), run: runBulk,
         ok: r => { const res = r.results || []; const ok = res.filter(x => yes(x.ok)).length; return fmt(T.apBulkDone, { ok, bad: res.length - ok }) + (r.stopped ? ' ' + r.stopped : ''); } });
     }, 'sec', { id: 'apBulk' });
     /* "Select all old stock": every old-stock entry this person may decide, also the ones not on the visible page */
     const allOld = btn(T.apSelOld, async () => {
-      const r = await api('approvals.list', { status: 'PENDING', type: 'OLD_STOCK' }); if (!r.ok) { notify(r.msg, 'bad'); return; }
-      const ids = (r.rows || []).filter(x => yes(x.canDecide)).map(x => x.id); ids.forEach(id => { picked[id] = true; });
-      root.querySelectorAll('input[data-pick]').forEach(c => { if (picked[c.dataset.pick]) c.checked = true; });
+      /* R37B-08: the list itself is switched to "Pending / Old stock" and loaded completely, so every ticked entry is on the screen */
+      const b = allOld; if (b.dataset.busy) return; b.dataset.busy = '1'; b.disabled = true; let ids = [];
+      try {
+        if (lv.filters) { lv.filters.set('status', 'PENDING'); lv.filters.set('type', 'OLD_STOCK'); }
+        clearPicked(); await lv.reload(); await lv.allRows();
+        if (lv.rows().length < lv.total()) return; /* a page failed to load: said by the list, nothing ticked */
+        ids = lv.rows().filter(x => x.type === 'OLD_STOCK' && yes(x.canDecide) && !(x.status && x.status !== 'PENDING')).map(x => x.id); ids.forEach(id => { picked[id] = true; });
+        root.querySelectorAll('input[data-pick]').forEach(c => { if (picked[c.dataset.pick]) c.checked = true; });
+      } finally { delete b.dataset.busy; b.disabled = false; }
       notify(fmt(T.apSelOldDone, { n: ids.length }), ids.length ? 'ok' : 'warn');
     }, 'sec', { id: 'apSelOld' });
     viewHead(root, T.apTitle, [allOld, bulk]);
@@ -89,6 +99,7 @@ VIEWS.approvals = {
         { k: 'ageWorkingHours', l: T.apAge, num: true }, { k: 'can', l: T.apStatus, v: r => (r.status && r.status !== 'PENDING' ? lbl('APPR_STATUS', r.status) : (yes(r.canDecide) ? lbl('APPR_STATUS', 'PENDING') : (isMine(r.by) ? T.apOwn : T.apOwnerOnly))),
           el: r => (r.status && r.status !== 'PENDING' ? pill('APPR_STATUS', r.status) : (yes(r.canDecide) ? pill('APPR_STATUS', 'PENDING') : h('span', { class: 'pill plain own-wait', text: isMine(r.by) ? T.apOwn : T.apOwnerOnly }))) }] });
     root.addEventListener('change', e => { const c = e.target.closest('input[data-pick]'); if (c) picked[c.dataset.pick] = c.checked; });
+    if (lv.filters) lv.filters.el.addEventListener('change', clearPicked); /* R37B-08: another filter = another list; ticks that leave the screen are dropped */
     S.refresh = () => { Object.keys(picked).forEach(k => delete picked[k]); return lv.reload(); };
     if (arg) openApproval(arg);
   }
@@ -115,9 +126,9 @@ function openApproval(id) {
     if (yes(a.cashOff)) { box.appendChild(note(T.apCashOff, 'warn')); if (!can) { box.appendChild(note(T.apOwnerOnly, 'warn')); return; }
       /* 4.0.5 (RVM-08): a "cash handed to the owner" request asks whether the cash came - the answer is kept with the dismissal; "No" leaves the owner a note */
       const askRcv = a.type === 'CASH_RECEIVED';
-      const F0 = mkForm((askRcv ? [{ k: 'received', l: T.apCashRecvQ, t: 'sel', req: true, placeholder: true, wide: true, o: [{ v: 'YES', t: T.apCashRecvYes }, { v: 'NO', t: T.apCashRecvNo }, { v: 'UNSURE', t: T.apCashRecvUnsure }] }] : []).concat([{ k: 'note', l: T.apNote, t: 'area', max: 300 }, { k: 'pin', l: T.yourPin, t: 'pin', req: true }])), err0 = h('div', { class: 'errbox', role: 'alert', hidden: true }); let busy0 = false;
+      const F0 = mkForm((askRcv ? [{ k: 'received', l: T.apCashRecvQ, t: 'sel', req: true, placeholder: true, wide: true, o: [{ v: 'YES', t: T.apCashRecvYes }, { v: 'NO', t: T.apCashRecvNo }, { v: 'UNSURE', t: T.apCashRecvUnsure }] }] : []).concat([{ k: 'note', l: T.apNote, t: 'area', max: 300 }, { k: 'pin', l: T.yourPin, t: 'pin', req: true }])), err0 = h('div', { class: 'errbox', role: 'alert', hidden: true }); let busy0 = false; const U0 = unsureGuard(err0, () => [F0.el]); /* R37B-01 */
       const dismiss = async b => { if (busy0) return; err0.hidden = true; F0.clearErr(); const bad = F0.check(); if (bad) { err0.textContent = bad; err0.hidden = false; return; } const v = F0.get(), data = { id: a.id || id, decision: 'REJECT', pin: v.pin }; if (v.note) data.note = v.note; if (askRcv) data.received = v.received;
-        busy0 = true; b.disabled = true; const x = await callConfirmed('approvals.decide', data); busy0 = false; b.disabled = false; if (x.cancelled) return;
+        busy0 = true; b.disabled = true; const x = await U0.run(() => callConfirmed('approvals.decide', data), b); /* R37B-01 */ busy0 = false; b.disabled = false; if (x.cancelled) return;
         if (!x.ok) { if (x.code === 'AUTH_PIN_WRONG') F0.mark('pin', ''); err0.textContent = x.msg; err0.hidden = false; return; }
         m.close(); notify(x.msg || T.apDismissed, 'ok'); refresh(); reloadLists(); };
       box.appendChild(h('div', { class: 'card', id: 'apDecide' }, F0.el, err0, h('div', { class: 'btns' }, btn(T.apDismiss, e => dismiss(e.currentTarget), 'sec', { id: 'apDismiss' }))));
@@ -138,6 +149,7 @@ function openApproval(id) {
       } };
     const F = mkForm((needOutcome ? [{ k: 'outcome', l: T.apOutcome, t: 'sel', req: true, placeholder: true, o: opts('OUTCOME', outcomes), wide: true }] : []).concat([].concat.apply([], inputs.map(inF)), [{ k: 'note', l: T.apNote, t: 'area', max: 300 }, { k: 'pin', l: T.yourPin, t: 'pin', req: true }]), init);
     const err = h('div', { class: 'errbox', role: 'alert', hidden: true }); let busy = false;
+    const U = unsureGuard(err, () => [err.parentNode]); /* R37B-01 */
     async function decide(decision, b) {
       if (busy) return; err.hidden = true; F.clearErr(); const v = F.get();
       if (decision === 'REJECT') { if (!v.note) { F.mark('note', ''); err.textContent = T.apNoteNeeded; err.hidden = false; return; } if (!v.pin || v.pin.length !== 6) { F.mark('pin', ''); err.textContent = T.pinHint; err.hidden = false; return; } }
@@ -146,7 +158,7 @@ function openApproval(id) {
       const data = { id: a.id || id, decision, pin: v.pin }; if (v.note) data.note = v.note;
       if (needOutcome) { data.outcome = v.outcome; data.decision = v.outcome === 'ACCEPT' ? 'APPROVE' : 'REJECT'; if (data.decision === 'REJECT' && !v.note) { F.mark('note', ''); err.textContent = T.apNoteNeeded; err.hidden = false; return; } }
       if (data.decision === 'APPROVE') { const inp = {}; inputs.forEach(x => { if (v[x.name] !== undefined && !(Array.isArray(v[x.name]) && !v[x.name].length)) inp[x.name] = x.name === 'warrantyDays' ? Number(v[x.name]) : v[x.name]; }); if (F.f.allowScope) { if (v.allowScope === 'ALL') inp.allowedUsers = 'ALL'; else delete inp.allowedUsers; if (v.allowScope === 'LIST') inp.allowedUsers = v.allowedUsers || []; } if (Object.keys(inp).length) data.inputs = inp; }
-      busy = true; b.disabled = true; const x = await callConfirmed('approvals.decide', data); busy = false; b.disabled = false;
+      busy = true; b.disabled = true; const x = await U.run(() => callConfirmed('approvals.decide', data), b); /* R37B-01: the boxes and the other button are locked after an unsure answer; the same decision is sent again */ busy = false; b.disabled = false;
       if (x.cancelled) return;
       if (!x.ok) { if (x.field) F.mark(x.field, ''); if (x.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); if (x.code === 'PAIR_CODE_WRONG') F.mark('pairCode', ''); err.textContent = x.msg; err.hidden = false; return; }
       m.close(); notify(x.stale === 'Y' ? x.msg : (needOutcome ? T.apDecided : (decision === 'APPROVE' ? T.apApproved : T.apRejected)), x.stale === 'Y' ? 'warn' : 'ok'); refresh(); reloadLists();

@@ -51,7 +51,7 @@ function openModal(o) {
     h('div', { class: 'modal-head' }, m.titleEl, m.closable ? m.x : null), m.body, m.foot);
   m.el = h('div', { class: 'modal' }, m.box);
   m.close = () => closeModal(m, false);
-  m.requestClose = async () => { if (!m.closable) return; if (m.dirty && m.dirty() && !(await askDiscard())) return; closeModal(m, false); };
+  m.requestClose = async () => { if (!m.closable) return; if (((m.dirty && m.dirty()) || unsureHeld(m.box)) && !(await askDiscard())) return; closeModal(m, false); }; /* R37B-01: a locked entry asks before it is left */
   m.box.addEventListener('keydown', e => {
     if (e.key === 'Escape') { e.stopPropagation(); m.requestClose(); return; }
     if (e.key !== 'Tab') return;
@@ -109,7 +109,54 @@ function confirmBox(msg, o) {
       btn(o.yes || T.continue_, () => { answered = true; m.close(); res(true); }, o.danger ? 'bad' : '', { 'data-autofocus': '' })]);
   });
 }
-const askDiscard = () => confirmBox(T.discardMsg, { title: T.discardTitle, yes: T.discard, no: T.keepEditing, danger: true });
+/* R37B-01: leaving a form whose entry may already be saved says so (not the plain "discard?") */
+const askDiscard = () => (unsureHeld() ? confirmBox(T.unsureLeaveMsg, { title: T.unsureLeaveTitle, yes: T.unsureLeaveYes, no: T.unsureStay, danger: true }) : confirmBox(T.discardMsg, { title: T.discardTitle, yes: T.discard, no: T.keepEditing, danger: true }));
+
+/* ================= R37B-01: the form is LOCKED after an unsure answer =================
+   After NET / SYS_BUSY / SYS_ERROR / STORAGE ("it may already be saved") the entry may be on the Sheet under the request ID of that
+   attempt. The request ID is made from the data, so one edited box used to give a NEW ID and the entry was saved twice. Now (as on the
+   pendrive, R33C-07) every box of the form is locked, the button sends EXACTLY the same entry again under the SAME request ID (the
+   server answers with the stored result), and "Start a new entry" - after a warning - is the only way to open the boxes; it takes a
+   new request ID. A definite answer (saved, refused) opens the form again.
+   U = unsureGuard(errEl, roots): errEl = the message box of the form (the notice is placed after it), roots = element(s) / function
+   whose inputs and buttons are locked. U.run(send, keep): send = () => the reply of the save, keep = the pressed button (stays usable). */
+const UNSURE = [];
+function unsureHeld(el) { return UNSURE.some(u => u.held && u.bar && u.bar.isConnected && (!el || el.contains(u.bar))); }
+function unsureGuard(err, roots) {
+  const U = { held: false, bar: null, fn: null, rids: {}, els: [] };
+  const rootList = () => [].concat(typeof roots === 'function' ? roots() : (roots || [])).filter(Boolean);
+  function lock(keep) {
+    if (!U.held) {
+      U.held = true;
+      U.bar = h('div', { class: 'note warn unsure-bar', role: 'status' }, h('p', { text: T.unsureLocked }), btn(T.unsureNew, startNew, 'sec sm', { 'data-unsure-new': '' }));
+      if (err && err.parentNode) err.parentNode.insertBefore(U.bar, err.nextSibling); else rootList()[0].appendChild(U.bar);
+      const v = $('#view'); if (v && v.contains(U.bar)) S.dirty = true; /* leaving the screen asks first */
+      if (UNSURE.indexOf(U) < 0) UNSURE.push(U);
+      for (let i = UNSURE.length - 1; i >= 0; i--) if (UNSURE[i] !== U && !(UNSURE[i].bar && UNSURE[i].bar.isConnected)) UNSURE.splice(i, 1);
+    }
+    rootList().forEach(root => $$('input,select,textarea,button', root).forEach(e => { if (e.disabled || e === keep || U.bar.contains(e)) return; e.disabled = true; e.dataset.unsureLock = '1'; U.els.push(e); }));
+  }
+  function unlock() {
+    U.els.forEach(e => { e.disabled = false; delete e.dataset.unsureLock; }); U.els = [];
+    if (U.bar) U.bar.remove(); U.bar = null; U.held = false; U.fn = null; U.rids = {};
+    const i = UNSURE.indexOf(U); if (i >= 0) UNSURE.splice(i, 1);
+  }
+  async function startNew() {
+    if (!U.held || !(await confirmBox(T.unsureNewAsk, { title: T.unsureNewTitle, yes: T.unsureNewYes, no: T.no, danger: true }))) return;
+    ridForget(Object.keys(U.rids)); unlock(); if (err) err.hidden = true;
+  }
+  U.run = async (fn, keep) => {
+    if (!U.held) U.fn = fn; /* while locked: the entry of the first attempt is sent again, never a new one */
+    else Object.keys(U.rids).forEach(k => ridPin(k, U.rids[k]));
+    const mine = []; RidWatch.list = mine;
+    let r; try { r = await U.fn(); } finally { if (RidWatch.list === mine) RidWatch.list = null; }
+    if (r && !r.ok && !r.cancelled && r.code && RID_OPEN[r.code]) { mine.forEach(k => { const x = RIDS.get(k); if (x) U.rids[k] = x.rid; }); lock(keep); }
+    else if (U.held && (!r || r.cancelled)) Object.keys(U.rids).forEach(k => ridPin(k, U.rids[k])); /* a question answered "No": still locked, same ID */
+    else if (U.held) unlock();
+    return r;
+  };
+  return U;
+}
 
 /* ================= forms ================= */
 /* Field: {k, l, t, o, req, ph, hint, max, show(v), wide, len, cam, onEnter, sticker, ro}
@@ -206,7 +253,19 @@ function mkForm(fields, init, fo) {
   F.sync(); Object.assign(first, F.all());
   return F;
 }
-Object.assign(T, { serialIsSticker: 'A sticker number was entered as the serial number.' });
+Object.assign(T, { serialIsSticker: 'A sticker number was entered as the serial number.',
+  /* R37B-01 */
+  unsureLocked: 'This entry may already be saved, so the boxes are locked. Press the button again to send exactly the same entry: if it was saved, it is not saved twice. To enter something different, first check whether this entry was saved, then choose "Start a new entry".',
+  unsureNew: 'Start a new entry', unsureNewTitle: 'Start a new entry?', unsureNewAsk: 'The entry you sent may already be saved. Do this only after you have checked that it was NOT saved - otherwise it is saved twice.', unsureNewYes: 'Yes, start a new entry',
+  unsureLeaveTitle: 'Leave this entry?', unsureLeaveMsg: 'The entry you sent may already be saved. Before you type it again, check whether it was saved - otherwise it is saved twice. Leave this screen?', unsureLeaveYes: 'Leave', unsureStay: 'Stay here',
+  /* R37B-02 */
+  updateCountOpen: 'A count is open on this device. The new version starts after the count is closed or left.',
+  /* R37B-04 */
+  seDateToday: 'Sale date set to today ({date}).', seDateAskTitle: 'Check the sale date', seDateAsk: 'The sale date is {date}, but today is {today}. Use today\'s date?', seDateUseToday: 'Yes, use today', seDateKeep: 'No, keep {date}',
+  /* R37B-05 */
+  cfVerFormat: 'Enter the version as three numbers, for example 4.0.6.', cfVerAheadApp: 'This GJ App is version {have}. A minimum above it would lock this app out. Update the app first, then raise the limit.', cfVerAheadPd: 'The newest GJ Pendrive version known is {have} (the newest that an approved pendrive has reported). A minimum above it would lock every pendrive out. Update the pendrives first.',
+  /* R37B-08 */
+  apBulkList: 'These requests will be approved:', apBulkHidden: 'Only requests that are shown in the list now are approved.' });
 
 /* Sends an action and walks the user through CONFIRM_* questions (the server names the key; the app never guesses). */
 /* R4chaos-10 / P1 (2.G): the request ID is the one api() keeps for this action + data in this dialog (ridFor): after an answer that leaves
@@ -255,6 +314,7 @@ function actionDialog(c) {
   const F = mkForm(fields, c.init);
   const m = openModal({ title: c.title, wide: c.wide, dirty: () => F.dirty, focusFirst: true });
   const errBox = h('div', { class: 'errbox', role: 'alert', hidden: true });
+  const U = unsureGuard(errBox, () => [m.body]); /* R37B-01 */
   const save = btn(c.submit || T.save, submit, c.danger ? 'bad' : '');
   if (c.intro) append(m.body, typeof c.intro === 'string' ? h('p', { class: 'intro', text: c.intro }) : c.intro);
   if (c.warn) append(m.body, note(c.warn, 'warn'));
@@ -276,14 +336,16 @@ function actionDialog(c) {
   let busy = false;
   async function submit() {
     if (busy) return; errBox.hidden = true;
-    if (listGap && !S.lists) { fail(T.listsFail); return; }
-    const bad = F.check(); if (bad) { fail(bad); return; }
-    const v = F.get();
-    if (c.validate) { const msg = c.validate(v, F); if (msg) { fail(msg); return; } }
-    let data = c.build ? c.build(v, F) : v; if (!data) return;
-    if (c.pin && data.pin === undefined) data.pin = v.pin;
+    const v = F.get(); let data = null;
+    if (!U.held) { /* R37B-01: a locked form is not checked or built again - U.run resends the entry of the first attempt */
+      if (listGap && !S.lists) { fail(T.listsFail); return; }
+      const bad = F.check(); if (bad) { fail(bad); return; }
+      if (c.validate) { const msg = c.validate(v, F); if (msg) { fail(msg); return; } }
+      data = c.build ? c.build(v, F) : v; if (!data) return;
+      if (c.pin && data.pin === undefined) data.pin = v.pin;
+    }
     busy = true; save.disabled = true; const old = save.textContent; save.textContent = T.wait;
-    let r; try { r = c.run ? await c.run(data, v) : await callConfirmed(c.action, data); } finally { busy = false; save.disabled = false; save.textContent = old; }
+    let r; try { r = await U.run(() => (c.run ? c.run(data, v) : callConfirmed(c.action, data)), save); } finally { busy = false; save.disabled = false; save.textContent = old; }
     if (r.cancelled) return;
     if (!r.ok) { F.clearErr(); if (r.field) F.mark(r.field, ''); fail(r.msg); if ((c.pin || F.f.pin) && r.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); return; }
     F.dirty = false; m.close();
