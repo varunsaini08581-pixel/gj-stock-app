@@ -43,7 +43,10 @@ function fmtDT(s) { const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec
 function todayISO() { const d = new Date(Date.now() + Net.offset()); const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); }
 function nowISO() { const d = new Date(Date.now() + Net.offset()); const p = n => String(n).padStart(2, '0'); return todayISO() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }
 function thisMonth() { return todayISO().slice(0, 7); }
-function normMobile(s) { const d = String(s == null ? '' : s).replace(/\D+/g, ''); return d.length > 10 ? d.slice(-10) : d; }
+/* normMobile (R32C-02, the pendrive's mobileOf rule): only a leading +91 / 91 / 0 / 091 is removed - 12 digits starting with 91, 11 starting
+   with 0, 13 starting with 091. Any other length is kept exactly as typed, so validMobile refuses it ("10-digit mobile"). The number is
+   never cut to its last 10 digits (98123456781 used to become the different valid number 8123456781). */
+function normMobile(s) { const d = String(s == null ? '' : s).replace(/\D+/g, ''); if (d.length === 12 && d.slice(0, 2) === '91') return d.slice(2); if (d.length === 11 && d[0] === '0') return d.slice(1); if (d.length === 13 && d.slice(0, 3) === '091') return d.slice(3); return d; }
 const validMobile = s => /^[6-9]\d{9}$/.test(s);
 /* Sticker normalisation: gj42, "GJ 42", GJ-0042 -> GJ-0042; other text upper-cased. */
 function normCode(s) { const t = String(s || '').trim().toUpperCase(); const m = /^(GJ|RJ)[\s-]*0*(\d{1,9})$/.exec(t); return m ? m[1] + '-' + m[2].padStart(4, '0') : t; }

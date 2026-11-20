@@ -178,7 +178,8 @@ Object.assign(T, { tDayMoney: 'Day money', dmTitle: 'Day money', dmIntro: 'The m
   dmLine: 'Money', dmCash: 'Cash', dmUpi: 'UPI', dmCard: 'Card', dmBank: 'Bank', dmOther: 'Mode not clear', dmTotal: 'Total',
   dm_sales: 'Sales received (laptops, accessories, parts, balances collected, advances)', dm_repairs: 'Repairs received (deliveries and job advances)', dm_refunds: 'Refunds given', dm_buybacks: 'Paid for laptops bought or taken in exchange', dm_vendors: 'Paid to outside vendors', dm_otherOut: 'Other payouts in the cash book', dm_net: 'Net money of the day',
   dmCounts: 'Count of the day', dmBills: 'Bills', dmLaptops: 'Laptops sold', dmRepairs: 'Repairs delivered', dmJobAdv: 'Job advances taken', dmAcc: 'Accessory sales', dmParts: 'Part sales', dmRefundsN: 'Refunds', dmBuybacks: 'Laptops bought or taken in exchange', dmVendorsN: 'Vendor payments', dmDue: 'Balance due on the bills of this day (not received yet)',
-  apCashOff: 'The cash day close is switched off. This request no longer changes anything - dismiss it.', apDismiss: 'Dismiss', apDismissed: 'Request dismissed' });
+  apCashOff: 'The cash day close is switched off. This request no longer changes anything - dismiss it.', apDismiss: 'Dismiss', apDismissed: 'Request dismissed',
+  apCashRecvQ: 'Did you receive this cash?', apCashRecvYes: 'Yes', apCashRecvNo: 'No', apCashRecvUnsure: 'Not sure' }); /* 4.0.5 (RVM-08) */
 HOME_TILES.push(['daymoney', 'tDayMoney', () => has('cash.summary')]);
 VIEWS.daymoney = {
   title: T.dmTitle, perm: () => has('cash.summary'),

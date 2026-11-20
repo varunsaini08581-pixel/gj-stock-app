@@ -1,7 +1,7 @@
 /* GJ App v4 — string table (STR). All user-visible text lives in T (interface text) and C (labels of codes, SPEC section 3).
    Other script files add their own section to T with Object.assign(T, {...}). Nothing in the app branches on label text. */
 'use strict';
-const APP_VERSION = '4.0.4'; /* 4.0.4: CASH-OFF - the cash day close can be switched off on the server (Day money screen, dismiss of cash requests); P1: request IDs kept by api() (2.G); 4.0.2: RVR22 + RVRP fixes (money choice, cash link, request ID per user); 4.0.3: RVV (a manager's cash link is sent for the owner's approval) - after this app is on GitHub Pages run raiseMinAppVersion() once */
+const APP_VERSION = '4.0.5'; /* 4.0.5: R2A-10 reason for reopening a PO, RVM-08 "Did you receive this cash?" on the dismiss of a cash request; 4.0.4: CASH-OFF - the cash day close can be switched off on the server (Day money screen, dismiss of cash requests); P1: request IDs kept by api() (2.G); 4.0.2: RVR22 + RVRP fixes (money choice, cash link, request ID per user); 4.0.3: RVV (a manager's cash link is sent for the owner's approval) - after this app is on GitHub Pages run raiseMinAppVersion() once */
 const PROTOCOL_VERSION = 4;
 
 /* ---------- C: code -> label (SPEC section 3). Hindi in brackets only where section 3 marks it. ---------- */
@@ -38,7 +38,7 @@ const C = {
   OUT_REASON: { LAMINATION: 'Lamination', OUTSIDE_REPAIR: 'Outside repair', DEALER_RETURN: 'Dealer warranty return', DEALER_REPLACEMENT: 'Dealer replacement', PHOTO_SHOOT: 'Photo shoot', STANDBY_CUSTOMER: 'Standby laptop to customer', WITH_STAFF: 'With staff member', ON_APPROVAL: 'On approval at another shop', OTHER: 'Other' },
   MOVE_OUTCOME: { SAME_UNIT: 'Same laptop returned', REPLACEMENT: 'Replacement received', REFUND_CREDIT: 'Refund / credit note', SOLD_OUTSIDE: 'Sold outside', WRITTEN_OFF: 'Written off (बट्टे खाते)' },
   SALE_STATUS: { OPEN: 'Open', VOID: 'Entry cancelled', RETURNED: 'Returned by customer' },
-  PAY: { CASH: 'Cash', UPI: 'UPI', CARD: 'Card', BANK: 'Bank transfer', MIXED: 'Mixed', SET_OFF: 'Set off on the bill' },
+  PAY: { CASH: 'Cash', UPI: 'UPI', CARD: 'Card', BANK: 'Bank transfer', MIXED: 'Mixed', SET_OFF: 'Set off on the bill', NOT_ASKED: 'Not asked (old app) - check' }, /* NOT_ASKED: R33C-02, a vendor charge from an app / pendrive without "Paid how" */
   EX_KIND: { EXCHANGE: 'Exchange', BUYBACK: 'Buyback', CUSTOMER_RETURN: 'Customer return' },
   EX_STATUS: { PENDING: 'Laptop not yet entered', SCANNED: 'Entered, waiting for approval', CLOSED: 'Closed', CANCELLED: 'Cancelled', REJECTED: 'Rejected' },
   ID_TYPE: { AADHAAR: 'Aadhaar', DL: 'Driving licence', VOTER: 'Voter ID', PAN: 'PAN', PASSPORT: 'Passport', OTHER: 'Other' },
@@ -67,7 +67,7 @@ const C = {
   APPR_TYPE: { DEVICE: 'New device', PENDRIVE_CHANGE: 'Pendrive changed', OLD_STOCK: 'Old stock entry', NO_PO: 'Receipt without PO', NETWORK_ADD: 'Add shop network', NO_SCAN_ENTRY: 'Entry without scan', PO_MISMATCH: 'Different from the PO', PO_EXTRA: 'Extra unit on PO',
     SERIAL_NOT_ON_PO: 'Serial number not on the PO', UNFIT_ACCEPT: 'Accept unfit laptop', EXCHANGE: 'Exchange / buyback', DEALER: 'New dealer', HW_FIRST: 'First scan differs from record', HW_CHANGE: 'Hardware changed',
     IDENTITY: 'Weak identity match', REBIND: 'Motherboard replaced (rebind)', UNSCANNABLE: 'Cannot be scanned', WRITE_OFF: 'Write off (बट्टे खाते)', OUT_REPEAT: 'Sent outside again', OUT_NO_SCAN: 'Sent outside without scan',
-    SPEC_EDIT: 'Lower RAM / storage of a record', UUID_BLOCK: 'Duplicate motherboard ID', DEALER_RETURN_REASON: 'Dealer return without scan evidence', SALE_BELOW_MIN: 'Sale below minimum price', SALE_RETURN: 'Customer return', JOB_CANCEL: 'Job cancelled with parts used', JOB_ABANDON: 'Close a job as abandoned', JOB_NO_SCAN: 'Job without scan',
+    SPEC_EDIT: 'Lower RAM / storage of a record', UUID_BLOCK: 'Duplicate motherboard ID', DEALER_RETURN_REASON: 'Dealer return - no fault on record', SALE_BELOW_MIN: 'Sale below minimum price', SALE_RETURN: 'Customer return', JOB_CANCEL: 'Job cancelled with parts used', JOB_ABANDON: 'Close a job as abandoned', JOB_NO_SCAN: 'Job without scan',
     PART_NO_PO: 'Part without PO', ACC_WRITEOFF: 'Accessory write-off', ACC_ADJUST: 'Accessory count correction', ACC_NO_PO: 'Accessory without PO', STAFF_CUSTODY: 'Laptop with staff member (Custody / ज़िम्मेदारी)',
     PO_REASSIGN: 'Move to another PO line', REINSTATE: 'Written-off laptop back in stock' },
   APPR_STATUS: { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled' },

@@ -47,11 +47,18 @@ VIEWS.count = {
 function countScreen(root, c) {
   S.refresh = null; S.dirty = false;
   const title = fmt(T.ctScanTitle, { section: lbl('SECTION', c.section), kind: lbl('COUNT_KIND', c.kind) });
-  root.appendChild(h('div', { class: 'vhead' }, btn(T.back, () => renderRoute(), 'ghost back'), h('h1', { text: title })));
+  /* R32C-03: Back asks when scans are not saved (failed and waiting for Retry, or still being sent) */
+  let unsent = () => 0;
+  root.appendChild(h('div', { class: 'vhead' }, btn(T.back, async () => { const n = unsent(); if (n && !(await confirmBox(fmt(T.ctUnsentLeave, { n }), { yes: T.ctLeaveYes, danger: true }))) return; S.dirty = false; renderRoute(); }, 'ghost back'), h('h1', { text: title })));
   if (c.kind === 'ACCESSORY') { accCount(root, c); return; }
   const big = h('div', { class: 'big', id: 'ctCounter', text: String(c.scanned) }), inp = h('input', { type: 'text', class: 'code', id: 'ctInput', 'data-scanbox': '', 'aria-label': c.kind === 'PARTS' ? T.ctScanPartBox : T.ctScanBox, placeholder: c.kind === 'PARTS' ? T.ctScanPartBox : T.ctScanBox, autocomplete: 'off', maxlength: 40 });
   const log = h('ul', { class: 'scanlog', id: 'ctLog', 'aria-live': 'polite' }), waitEl = h('p', { class: 'hint', id: 'ctWaiting' });
   const queue = [], shown = []; let running = false, lastKey = 0, fast = 0, slow = 0;
+  /* R31C-08: scans waiting to be sent live only in this page - no update reload until they are sent. R32C-03: the same for a scan that
+     failed and waits for Retry (it is shown in red only on this page); S.dirty is set while there is one, so Back, F5 and leaving ask */
+  const failed = () => shown.filter(x => x.state === 'bad' && x.retry).length;
+  unsent = () => shown.filter(x => x.state === 'wait' || (x.state === 'bad' && x.retry)).length;
+  S.hold = () => running || queue.length > 0 || failed() > 0;
   function draw() {
     clear(log);
     shown.slice(-8).reverse().forEach(x => {
@@ -62,6 +69,7 @@ function countScreen(root, c) {
       log.appendChild(li);
     });
     const n = queue.length; waitEl.textContent = n ? fmt(T.ctWaiting, { n }) : '';
+    if (root.isConnected) S.dirty = unsent() > 0;
   }
   /* Scans are sent strictly one after another; a failed scan stays visible in red with Retry and never blocks the next ones. */
   async function pump() {
@@ -100,9 +108,10 @@ function countScreen(root, c) {
   const reveal = btn(T.ctReveal, async () => {
     if (!(await confirmBox(T.ctRevealAsk, { yes: T.ctRevealYes }))) return;
     reveal.disabled = true; while (running || queue.length) await sleep(150);
+    const nf = failed(); if (nf && !(await confirmBox(fmt(T.ctUnsentReveal, { n: nf }), { yes: T.ctRevealYes, danger: true }))) { reveal.disabled = false; return; }
     const r = await api('count.reveal', { countId: c.countId }); reveal.disabled = false;
     if (!r.ok) { notify(r.msg, 'bad'); return; }
-    S.keys = null; countResult(clear(root), c, r);
+    S.keys = null; S.dirty = false; countResult(clear(root), c, r);
   }, 'sec', { id: 'ctReveal' });
   append(root, [h('div', { class: 'card' }, big, h('p', { class: 'muted num-label', text: T.ctScanned }), h('div', { class: 'scanbox' }, inp, btn(T.camera, () => cameraScan(v => { inp.value = v; submit('CAMERA'); }), 'sec')), waitEl), h('h2', { text: T.ctLast }), log, h('div', { class: 'btns' }, reveal)]);
   draw(); soon(() => inp.focus());
@@ -112,6 +121,9 @@ function countResult(root, c, r) {
   root.appendChild(h('div', { class: 'vhead' }, h('h1', { text: fmt(T.ctResultTitle, { section: lbl('SECTION', c.section) }) })));
   const missing = r.missing || [], extra = r.extra || [], unknown = r.unknown || [], selects = {};
   const card = h('div', { class: 'card', id: 'ctResult' }); root.appendChild(card);
+  /* R31C-08: the count result (a reason for every missing laptop, the PIN) is work in progress: no update reload while it is on screen, and
+     leaving it after something was chosen or typed asks first */
+  S.hold = () => true; card.addEventListener('input', () => { S.dirty = true; }); card.addEventListener('change', () => { S.dirty = true; });
   card.appendChild(h('h2', { text: T.ctMissing }));
   if (!missing.length) card.appendChild(note(T.ctMissingNone, 'ok'));
   else card.appendChild(simpleTable([{ k: 'id', l: T.cRef, main: true }, { k: 'info', l: T.ctInfo, main: true }, { k: 'reason', l: T.ctReason, el: x => { const s = h('select', { 'aria-label': T.ctReason + ' ' + x.id }); s.appendChild(h('option', { value: '', text: T.select })); opts('MISSING_REASON').forEach(o => s.appendChild(h('option', { value: o.v, text: o.t }))); selects[x.id] = s; return s; } }], missing));
@@ -217,13 +229,16 @@ function submitSheetDialog(section) {
   count();
   return m;
 }
+/* R32C-03: scans that failed and wait for Retry are unsaved work */
+Object.assign(T, { ctUnsentLeave: '{n} scans are not saved yet (the red rows, or still sending). If you leave this screen they are lost and those laptops may show as Missing. Press Retry first. Leave anyway?', ctLeaveYes: 'Leave without them',
+  ctUnsentReveal: '{n} scans were not saved (the red rows). Press Retry on each of them first - otherwise those laptops may show as Missing. Show the differences anyway?' });
 Object.assign(T, { ssAckNeeded: 'Confirm that you have seen the laptops that are not scanned.', rpCountHist: 'Count history' });
 
 /* ---------- V18 scan-cycle rota ---------- */
 VIEWS.rota = {
   title: T.rtTitle, perm: () => has('rota'),
   render(root) {
-    viewHead(root, T.rtTitle); root.appendChild(h('p', { class: 'intro', text: T.rtIntro }));
+    viewHead(root, T.rtTitle); if (needLists(root)) return; root.appendChild(h('p', { class: 'intro', text: T.rtIntro }));
     const mF = mkForm([{ k: 'month', l: T.rtMonth, t: 'month', req: true, dflt: thisMonth() }], {}, { cls: 'filters' }), body = h('div');
     append(root, [mF.el, body]);
     const secUsers = s => (L().users || []).filter(u => u.section === s);

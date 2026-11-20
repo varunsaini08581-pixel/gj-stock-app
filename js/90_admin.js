@@ -107,9 +107,9 @@ VIEWS.devices = {
       box.appendChild(tools('Devices', T.dvTitle, cols, async () => devs));
       box.appendChild(simpleTable(cols, devs, { empty: T.dvEmpty, onRow: d => {
         if (d.status !== 'APPROVED') return;
-        actionDialog({ title: fmt(T.dvEditTitle, { label: d.label }), action: 'admin.deviceSave', init: { label: d.label, allowedUsers: d.allowedUsers || [], adminAllowed: yes(d.adminAllowed) ? 'Y' : 'N', customerUse: yes(d.customerUse) ? 'Y' : 'N' },
-          fields: [{ k: 'label', l: T.dvLabel, req: true, max: 40 }, { k: 'allowedUsers', l: T.dvUsers, t: 'multi', o: () => userOpts() }, { k: 'adminAllowed', l: T.dvAdmin, t: 'check' }, d.kind === 'PENDRIVE' ? { k: 'customerUse', l: T.dvCustomer, t: 'check' } : null].filter(Boolean),
-          build: v => Object.assign({ deviceId: d.deviceId }, v),
+        actionDialog({ title: fmt(T.dvEditTitle, { label: d.label }), action: 'admin.deviceSave', init: { label: d.label, allowScope: (d.allowedUsers || []).length ? 'LIST' : 'ALL', allowedUsers: d.allowedUsers || [], adminAllowed: yes(d.adminAllowed) ? 'Y' : 'N', customerUse: yes(d.customerUse) ? 'Y' : 'N' },
+          fields: [{ k: 'label', l: T.dvLabel, req: true, max: 40 }, { k: 'allowScope', l: T.apAllowScope, t: 'sel', req: true, o: [{ v: 'ALL', t: T.apAllowAll }, { v: 'LIST', t: T.apAllowList }] }, { k: 'allowedUsers', l: T.dvUsers, t: 'multi', req: true, o: () => userOpts(), needList: true, show: v => v.allowScope === 'LIST' } /* RV32-02: the same explicit choice as at approval */, { k: 'adminAllowed', l: T.dvAdmin, t: 'check' }, d.kind === 'PENDRIVE' ? { k: 'customerUse', l: T.dvCustomer, t: 'check' } : null].filter(Boolean),
+          build: (v, F) => { const ch = F.changed(), o = Object.assign({ deviceId: d.deviceId }, v); delete o.allowScope; delete o.allowedUsers; if ('allowScope' in ch || 'allowedUsers' in ch) o.allowedUsers = v.allowScope === 'ALL' ? 'ALL' : (v.allowedUsers || []); return o; }, /* RV32-02 / R33C-04: the explicit choice, sent only when it changed */
           extra: (body, F, m) => { if (d.deviceId !== mine) body.appendChild(h('div', { class: 'btns' }, btn(T.dvRevoke, async e => { if (!(await confirmBox(fmt(T.dvRevokeAsk, { label: d.label }), { danger: true, yes: T.dvRevoke }))) return; const x = await runAction(e.currentTarget, 'admin.deviceSave', { deviceId: d.deviceId, revoke: 'Y' }, { ok: T.dvRevoked }); if (x.ok) { F.dirty = false; m.close(); } }, 'bad', { id: 'dvRevoke' }))); } });
       } }));
     });

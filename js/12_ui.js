@@ -143,7 +143,9 @@ function mkForm(fields, init, fo) {
       case 'int': case 'money': inp = h('input', Object.assign(common, { type: 'text', inputmode: 'numeric', class: 'num' })); inp.value = cur == null || cur === '' ? '' : (fd.t === 'money' ? grp(cur) : digits(cur));
         inp.addEventListener('input', () => { const d = digits(inp.value).slice(0, 9); inp.value = fd.t === 'money' ? grp(d) : d; }); break;
       case 'mobile': inp = h('input', Object.assign(common, { type: 'text', inputmode: 'numeric', name: 'gj-contact-' + id, class: 'num' })); inp.value = cur || '';
-        inp.addEventListener('input', () => { inp.value = normMobile(inp.value); wrap.classList.toggle('invalid', inp.value !== '' && !validMobile(inp.value)); hintEl.textContent = inp.value !== '' && !validMobile(inp.value) ? T.mobileHint : (fd.hint || ''); }); break;
+        /* R32C-02: normMobile removes only non-digits and a +91 / 91 / 0 in front (a pasted "+91 98173 41229" shows 9817341229); it never
+           cuts a number, so one digit too many stays visible with the "10-digit mobile" hint */
+        inp.addEventListener('input', () => { const m = normMobile(inp.value); if (m !== inp.value) inp.value = m; const bad = inp.value !== '' && !validMobile(inp.value); wrap.classList.toggle('invalid', bad); hintEl.textContent = bad ? T.mobileHint : (fd.hint || ''); }); break;
       case 'pin': case 'digits': inp = h('input', Object.assign(common, { type: 'text', inputmode: 'numeric', name: 'gj-code-' + id, class: 'num' + (fd.t === 'pin' ? ' pin' : ''), maxlength: fd.len || 6, autocomplete: 'off', 'data-lpignore': 'true', 'data-1p-ignore': 'true' }));
         inp.value = cur || ''; inp.addEventListener('input', () => { inp.value = String(inp.value).replace(/\D+/g, '').slice(0, fd.len || 6); }); break;
       case 'multi': inp = h('div', { class: 'multi', id, role: 'group', 'aria-label': fd.l }); optList(fd).forEach(x => { const cid = uid('c');
@@ -168,6 +170,7 @@ function mkForm(fields, init, fo) {
       case 'int': case 'money': { const d = digits(inp.value).replace(/\.$/, ''); return d === '' || d === '-' ? undefined : Number(d); }
       case 'multi': return $$('input:checked', inp).map(c => c.value);
       case 'static': return undefined;
+      case 'mobile': { const v = normMobile(inp.value); return v === '' ? undefined : v; }
       case 'code': { const v = fd.sticker ? normSticker(inp.value, fd.sticker) : normCode(inp.value); return v === '' ? undefined : v; }
       default: { const v = String(inp.value || '').trim(); return v === '' ? undefined : v; }
     }
@@ -255,6 +258,15 @@ function actionDialog(c) {
   const save = btn(c.submit || T.save, submit, c.danger ? 'bad' : '');
   if (c.intro) append(m.body, typeof c.intro === 'string' ? h('p', { class: 'intro', text: c.intro }) : c.intro);
   if (c.warn) append(m.body, note(c.warn, 'warn'));
+  /* R31C-07: a dialog whose REQUIRED drop-down is empty because the lists failed to load cannot be saved; "Load the lists again" opens it
+     again with what was typed */
+  const optList = fd => { try { const o = typeof fd.o === 'function' ? fd.o({}) : fd.o; return Array.isArray(o) ? o : []; } catch (e) { return []; } };
+  /* round 32: also an optional list box marked needList (device "Users allowed"): saved empty it would mean "all staff" */
+  const listGap = !S.lists && fields.some(fd => fd && (fd.req || fd.needList) && (fd.t === 'sel' || fd.t === 'multi') && !optList(fd).length);
+  if (listGap) {
+    const rb = btn(T.listsRetry, async () => { rb.disabled = true; const ok = await ensureLists(); rb.disabled = false; if (!ok) { notify(T.listsFail, 'bad'); return; } const keep = F.all(); fields.forEach(fd => { if (fd && fd.t === 'multi' && !optList(fd).length) delete keep[fd.k]; }); F.dirty = false; m.close(); actionDialog(Object.assign({}, c, { init: Object.assign({}, c.init || {}, keep) })); }, 'sec', { id: 'dlgListsRetry' });
+    m.body.appendChild(h('div', { class: 'note bad', role: 'alert', id: 'dlgListsFail' }, h('p', { text: T.listsFail }), rb));
+  }
   m.body.appendChild(F.el);
   if (c.extra) c.extra(m.body, F, m);
   append(m.foot, [errBox, h('div', { class: 'foot-btns' }, btn(T.cancel, () => m.requestClose(), 'sec'), save)]);
@@ -264,6 +276,7 @@ function actionDialog(c) {
   let busy = false;
   async function submit() {
     if (busy) return; errBox.hidden = true;
+    if (listGap && !S.lists) { fail(T.listsFail); return; }
     const bad = F.check(); if (bad) { fail(bad); return; }
     const v = F.get();
     if (c.validate) { const msg = c.validate(v, F); if (msg) { fail(msg); return; } }

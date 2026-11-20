@@ -254,7 +254,9 @@ function parseBulkTsv(text) {
     if (c[3]) row.data.billNo = c[3].slice(0, 40);
     if (c[4]) { const d = parseDateFlexible(c[4]); if (d) row.data.billDate = d; else row.err[4] = T.eDate; }
     if (c[5]) { const w = /^none$/i.test(c[5]) ? 0 : Number(c[5]); if ([0, 15, 30, 90].indexOf(w) >= 0) row.data.warrantyDays = w; else row.err[5] = T.eWarranty; }
-    if (c[6]) { const n = c[6].replace(/[,₹\s]/g, ''); if (/^\d+$/.test(n) && Number(n) > 0) row.data.rate = Number(n); else row.err[6] = T.eRate; }
+    /* R32C-05: the rate is read like every other money box (pendrive moneyOf): Rs / INR / ₹, spaces and commas are removed, ".00" paise are
+       accepted ("21,500.00" from an Accounting / Number cell = 21500); other paise, letters or a second "." are refused */
+    if (c[6]) { const n = c[6].replace(/^(rs\.?|inr|₹)\s*/i, '').replace(/[,₹\s]/g, ''), m = /^(\d+)(?:\.(0*))?$/.exec(n); if (m && Number(m[1]) > 0) row.data.rate = Number(m[1]); else row.err[6] = T.eRate; }
     if (c[7]) { const k = c[7].toUpperCase(); const code = Object.keys(C.CHARGER).find(x => x === k || C.CHARGER[x].toUpperCase() === k || C.CHARGER[x].toUpperCase().split(' ')[0] === k) || (/^(NO|NIL)$/.test(k) ? 'NONE' : ''); if (code) row.data.charger = code; else row.err[7] = T.eCharger; }
     if (c[8]) row.data.note = c[8].slice(0, 300);
     row.ok = !Object.keys(row.err).length && Object.keys(row.data).length > 1;

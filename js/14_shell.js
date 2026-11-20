@@ -13,7 +13,8 @@ Object.assign(T, {
   pinTitle: 'Change my PIN', pinForced: 'Set a new PIN', pinForcedMsg: 'You must set a new PIN before continuing. Do not share it with anyone.',
   pinRules: 'The PIN has 6 digits. Not allowed: the same digit six times (111111), a run such as 123456 or 654321, or parts of your mobile number.',
   pinOld: 'Current PIN', pinNew: 'New PIN', pinNew2: 'Confirm new PIN', pinMismatch: 'The two new PINs do not match.', pinChanged: 'PIN changed.', pinChange: 'Change PIN',
-  welcome: 'Welcome, {name}', skip: 'Skip to content'
+  welcome: 'Welcome, {name}', skip: 'Skip to content',
+  listsFail: 'The lists (staff, dealers, partners, kit items) could not be loaded. Check the internet and press "Load the lists again". This form cannot be used until they are loaded.', listsRetry: 'Load the lists again'
 });
 
 /* ================= routing ================= */
@@ -38,14 +39,34 @@ function goBack() { if (navDepth > 0) history.back(); else go('home'); }
 function renderRoute(keepScroll) {
   if (!S.me || S.forcedPin) return;
   const r = parseHash(); let v = VIEWS[r.view]; if (!v) { r.view = 'home'; r.arg = ''; v = VIEWS.home; }
-  S.route = r; S.tok++; S.dirty = false; S.refresh = null; S.keys = null;
+  S.route = r; S.tok++; S.dirty = false; S.refresh = null; S.keys = null; S.hold = null; S.typed = false; S.listsWait = false;
   const root = clear($('#view'));
   document.title = v.title ? v.title + ' · ' + T.appName : T.appName;
   if (v.perm && !v.perm()) { root.appendChild(errorCard(T.noPerm)); root.appendChild(btn(T.home, () => go('home'), 'sec')); return; }
   try { v.render(root, r.arg); } catch (e) { console.error(e); root.appendChild(errorCard(T.errUnexpected)); }
   if (!keepScroll) window.scrollTo(0, 0);
   drawFooter();
+  /* R31C-07: lists that failed to load are asked again at every screen change; a screen that waits for them is drawn again once they are in */
+  if (!S.lists) { const tok = S.tok; ensureLists().then(ok => { if (ok && S.tok === tok && S.listsWait && !S.dirty && !S.typed && !MODALS.length) renderRoute(true); }); }
 }
+/* R31C-07: meta.lists. A failure is never kept as "empty lists": S.lists stays null, it is asked again, and the forms that need the lists
+   (Sell, Receive, the rota and every dialog whose required list is empty) are blocked with "Load the lists again" until it is loaded. */
+let listsP = null;
+function ensureLists() {
+  if (S.lists) return Promise.resolve(true);
+  if (!listsP) listsP = api('meta.lists', {}).then(r => { listsP = null; if (r && r.ok) { S.lists = r; return true; } return false; }, () => { listsP = null; return false; });
+  return listsP;
+}
+function needLists(root) {
+  if (S.lists) return false;
+  S.listsWait = true;
+  const b = btn(T.listsRetry, async () => { b.disabled = true; const ok = await ensureLists(); b.disabled = false; if (ok) renderRoute(true); else notify(T.listsFail, 'bad'); }, '', { id: 'listsRetry' });
+  root.appendChild(h('div', { class: 'card errcard', role: 'alert', id: 'listsFail' }, h('p', { class: 'errmsg', text: T.listsFail }), b));
+  return true;
+}
+/* R31C-08: typed data on the screen (outside a dialog) - the update reload waits for it */
+document.addEventListener('input', e => { const v = $('#view'); if (v && e.target && v.contains(e.target) && !e.target.hasAttribute('data-scanbox')) S.typed = true; }, true);
+document.addEventListener('change', e => { const v = $('#view'); if (v && e.target && v.contains(e.target) && !e.target.hasAttribute('data-scanbox')) S.typed = true; }, true);
 function viewHead(root, title, actions) {
   const head = h('div', { class: 'vhead' }, S.route.view === 'home' ? null : btn(T.back, goBack, 'ghost back'), h('h1', { text: title }), h('div', { class: 'vactions' }, actions || null));
   root.appendChild(head); return head;
@@ -137,16 +158,18 @@ function fatal(msg) { stage([h('h1', { text: T.appName }), h('p', { class: 'errm
 async function boot() {
   if (!window.crypto || !crypto.subtle || !crypto.randomUUID || !window.indexedDB || !window.fetch || !window.AbortController || !window.TextEncoder) { fatal(T.browserOld); return; }
   if ('serviceWorker' in navigator) {
-    let had = !!navigator.serviceWorker.controller, waitingReg = null, bar = null;
+    let had = !!navigator.serviceWorker.controller, waitingReg = null, bar = null, wantReload = false;
     /* R4ops-14: a new version never takes over an open form. It is applied when the page is idle (no dialog, nothing unsaved), or at once with
        "Reload now" on a small bar; only CLIENT_OUTDATED from the server (Hooks.update) shows the blocking update screen. */
-    const idle = () => !S.dirty && !MODALS.length;
-    const apply = () => { if (waitingReg && waitingReg.waiting) waitingReg.waiting.postMessage('SKIP_WAITING'); };
+    /* R31C-08: idle = no dialog, nothing unsaved (S.dirty), nothing typed on the screen (S.typed), no screen that holds work (S.hold: the
+       count while scans are waiting to be sent, the count result). Otherwise only the "Reload now" bar is shown. */
+    const idle = () => !S.dirty && !S.typed && !MODALS.length && !(S.hold && S.hold());
+    const apply = () => { if (waitingReg && waitingReg.waiting) waitingReg.waiting.postMessage({ t: 'SKIP_WAITING', v: APP_VERSION }); }; /* R33C-01: the object form - the new worker ignores the plain string of a 4.0.4 page */
     const offer = reg => {
       if (!reg.waiting || !navigator.serviceWorker.controller) return;
       waitingReg = reg; if (idle()) { apply(); return; }
       if (bar) return;
-      bar = h('div', { class: 'toast warn', role: 'status', style: 'position:fixed;left:12px;right:12px;bottom:12px;z-index:50' }, h('span', { text: T.updateReady }), btn(T.updateReload, () => apply(), 'ghost'));
+      bar = h('div', { class: 'toast warn', role: 'status', style: 'position:fixed;left:12px;right:12px;bottom:12px;z-index:50' }, h('span', { text: T.updateReady }), btn(T.updateReload, () => { wantReload = true; if (waitingReg && waitingReg.waiting) apply(); else location.reload(); }, 'ghost'));
       document.body.appendChild(bar);
     };
     navigator.serviceWorker.register('sw.js').then(reg => {
@@ -157,7 +180,7 @@ async function boot() {
     /* another tab may activate the new version: this page reloads only when it is idle (the old screen keeps working until then) */
     let changed = false;
     const t0 = Date.now(); /* a version change while the page is still starting up reloads later (never a reload in the middle of loading) */
-    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) { if (idle() && Date.now() - t0 > 8000) location.reload(); else if (idle()) changed = true; else { changed = true; if (!bar) { bar = h('div', { class: 'toast warn', role: 'status', style: 'position:fixed;left:12px;right:12px;bottom:12px;z-index:50' }, h('span', { text: T.updateReady }), btn(T.updateReload, () => location.reload(), 'ghost')); document.body.appendChild(bar); } } } had = true; });
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) { if (wantReload || (idle() && Date.now() - t0 > 8000)) location.reload(); else if (idle()) changed = true; else { changed = true; if (!bar) { bar = h('div', { class: 'toast warn', role: 'status', style: 'position:fixed;left:12px;right:12px;bottom:12px;z-index:50' }, h('span', { text: T.updateReady }), btn(T.updateReload, () => location.reload(), 'ghost')); document.body.appendChild(bar); } } } had = true; });
   }
   if (!Net.configured()) { stage([h('h1', { text: T.setupTitle }), h('p', { text: T.setupMsg })]); return; }
   let dev; try { dev = await Net.device(); } catch (e) { fatal(T.storageBlocked); return; }
@@ -257,7 +280,11 @@ async function enterApp() {
   const who = clear($('#who'));
   append(who, [h('span', { class: 'who-name', text: S.me.name + ' · ' + lbl('ROLE', S.me.role) }), btn(T.logout, e => logout(e.currentTarget), 'sm ghost light', { id: 'logoutBtn' })]);
   armIdle();
-  if (!S.lists) { clear($('#view')).appendChild(spinner()); const r = await api('meta.lists', {}); if (r.ok) S.lists = r; else notify(r.msg, 'bad'); }
+  if (!S.lists) {
+    clear($('#view')).appendChild(spinner());
+    let ok = await ensureLists(); if (!ok) { await sleep(1500); ok = await ensureLists(); }   /* R31C-07: asked again, never kept empty */
+    if (!ok) notify(T.listsFail, 'bad');
+  }
   renderRoute();
 }
 Hooks.forcePin = () => showChangePin(true);

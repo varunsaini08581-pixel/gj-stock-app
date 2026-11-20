@@ -6,6 +6,9 @@ Object.assign(C, {
   REC_CODE: { status: 'STATUS', state: 'STATE', location: 'LOCATION', scanMode: 'SCAN_MODE', source: 'SOURCE', charger: 'CHARGER', mode: 'SCAN_MODE', lockCode: 'UNFIT', idType: 'ID_TYPE', deviceKind: 'DEVICE_KIND', fitLevel: 'FIT', declaration: 'YN', originalBill: 'YN', activation: 'ACTIVATION' },
   ACTIVATION: { ACTIVATED: 'Activated', KMS: 'Activated by KMS (temporary)', NOT_ACTIVATED: 'Not activated', UNKNOWN: 'Not known', NA: 'Not applicable (macOS)' }
 });
+/* round 32: approving a device asks who may sign in on it - an explicit choice, never "all staff" because a box was left empty */
+Object.assign(T, { apAllowScope: 'Who may sign in on this device', apAllowAll: 'All staff', apAllowList: 'Only the people ticked below',
+  apAllowNoList: 'The staff list could not be loaded, so nobody can be ticked. Reload the page, or choose "All staff" if that is what you want.' });
 Object.assign(T, {
   apTitle: 'Approvals', apEmpty: 'Nothing is waiting for approval.', apId: 'Request', apType: 'Type', apRef: 'Reference', apSummary: 'Summary', apBy: 'Requested by', apAge: 'Waiting (working hours)', apDown: 'Downgrade', apDownHint: 'Shows a downgrade — open it individually',
   apPendriveCheck: 'Compare the pairing code and the USB serial with the screen of the pendrive in front of you.', apOwn: 'Waiting for the owner', apOwnerOnly: 'Only the owner can decide', apSelect: 'Select', apApproveSel: 'Approve selected', apSelNone: 'Tick the requests to approve.', apSelOld: 'Select all old stock', apSelOldDone: '{n} old-stock entries selected. Press "Approve selected" and enter your PIN once.', apBulkTitle: 'Approve {n} selected requests', apBulkDone: '{ok} approved, {bad} not approved.',
@@ -110,8 +113,10 @@ function openApproval(id) {
     if (!pending) return;
     /* CASH-OFF (4.0.4): a cash link / cash-received request while the cash day close is switched off - only dismissed (owner) */
     if (yes(a.cashOff)) { box.appendChild(note(T.apCashOff, 'warn')); if (!can) { box.appendChild(note(T.apOwnerOnly, 'warn')); return; }
-      const F0 = mkForm([{ k: 'note', l: T.apNote, t: 'area', max: 300 }, { k: 'pin', l: T.yourPin, t: 'pin', req: true }]), err0 = h('div', { class: 'errbox', role: 'alert', hidden: true }); let busy0 = false;
-      const dismiss = async b => { if (busy0) return; err0.hidden = true; F0.clearErr(); const bad = F0.check(); if (bad) { err0.textContent = bad; err0.hidden = false; return; } const v = F0.get(), data = { id: a.id || id, decision: 'REJECT', pin: v.pin }; if (v.note) data.note = v.note;
+      /* 4.0.5 (RVM-08): a "cash handed to the owner" request asks whether the cash came - the answer is kept with the dismissal; "No" leaves the owner a note */
+      const askRcv = a.type === 'CASH_RECEIVED';
+      const F0 = mkForm((askRcv ? [{ k: 'received', l: T.apCashRecvQ, t: 'sel', req: true, placeholder: true, wide: true, o: [{ v: 'YES', t: T.apCashRecvYes }, { v: 'NO', t: T.apCashRecvNo }, { v: 'UNSURE', t: T.apCashRecvUnsure }] }] : []).concat([{ k: 'note', l: T.apNote, t: 'area', max: 300 }, { k: 'pin', l: T.yourPin, t: 'pin', req: true }])), err0 = h('div', { class: 'errbox', role: 'alert', hidden: true }); let busy0 = false;
+      const dismiss = async b => { if (busy0) return; err0.hidden = true; F0.clearErr(); const bad = F0.check(); if (bad) { err0.textContent = bad; err0.hidden = false; return; } const v = F0.get(), data = { id: a.id || id, decision: 'REJECT', pin: v.pin }; if (v.note) data.note = v.note; if (askRcv) data.received = v.received;
         busy0 = true; b.disabled = true; const x = await callConfirmed('approvals.decide', data); busy0 = false; b.disabled = false; if (x.cancelled) return;
         if (!x.ok) { if (x.code === 'AUTH_PIN_WRONG') F0.mark('pin', ''); err0.textContent = x.msg; err0.hidden = false; return; }
         m.close(); notify(x.msg || T.apDismissed, 'ok'); refresh(); reloadLists(); };
@@ -127,17 +132,20 @@ function openApproval(id) {
         case 'dealerId': return Object.assign(base, { t: 'sel', o: () => dealerOpts() }); case 'billDate': return Object.assign(base, { t: 'date', maxToday: true });
         case 'warrantyDays': return Object.assign(base, { t: 'sel', o: warrantyOpts }); case 'payMode': case 'refundMode': return Object.assign(base, { t: 'sel', o: payOpts1 });
         case 'pairCode': return Object.assign(base, { t: 'code', cam: false, max: 6 }); case 'replaceDeviceId': return Object.assign(base, { t: 'sel', req: false, ph: T.apNoReplace, o: (d.replaceable || []).map(v => ({ v: v.deviceId, t: v.label })) });
-        case 'allowedUsers': return Object.assign(base, { t: 'multi', req: false, o: () => userOpts() }); default: return Object.assign(base, { max: 60 });
+        /* round 32: "Users allowed" comes with a required choice: all staff, or only the people ticked (then at least one is required) */
+        case 'allowedUsers': return [{ k: 'allowScope', l: T.apAllowScope, t: 'sel', req: true, placeholder: true, wide: true, o: [{ v: 'ALL', t: T.apAllowAll }, { v: 'LIST', t: T.apAllowList }] },
+          Object.assign(base, { t: 'multi', req: true, o: () => userOpts(), show: v => v.allowScope === 'LIST' })]; default: return Object.assign(base, { max: 60 });
       } };
-    const F = mkForm((needOutcome ? [{ k: 'outcome', l: T.apOutcome, t: 'sel', req: true, placeholder: true, o: opts('OUTCOME', outcomes), wide: true }] : []).concat(inputs.map(inF), [{ k: 'note', l: T.apNote, t: 'area', max: 300 }, { k: 'pin', l: T.yourPin, t: 'pin', req: true }]), init);
+    const F = mkForm((needOutcome ? [{ k: 'outcome', l: T.apOutcome, t: 'sel', req: true, placeholder: true, o: opts('OUTCOME', outcomes), wide: true }] : []).concat([].concat.apply([], inputs.map(inF)), [{ k: 'note', l: T.apNote, t: 'area', max: 300 }, { k: 'pin', l: T.yourPin, t: 'pin', req: true }]), init);
     const err = h('div', { class: 'errbox', role: 'alert', hidden: true }); let busy = false;
     async function decide(decision, b) {
       if (busy) return; err.hidden = true; F.clearErr(); const v = F.get();
       if (decision === 'REJECT') { if (!v.note) { F.mark('note', ''); err.textContent = T.apNoteNeeded; err.hidden = false; return; } if (!v.pin || v.pin.length !== 6) { F.mark('pin', ''); err.textContent = T.pinHint; err.hidden = false; return; } }
-      else { const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; } }
+      else { if (F.f.allowScope && v.allowScope === 'LIST' && !userOpts().length) { F.mark('allowScope', ''); err.textContent = T.apAllowNoList; err.hidden = false; return; }
+        const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; } }
       const data = { id: a.id || id, decision, pin: v.pin }; if (v.note) data.note = v.note;
       if (needOutcome) { data.outcome = v.outcome; data.decision = v.outcome === 'ACCEPT' ? 'APPROVE' : 'REJECT'; if (data.decision === 'REJECT' && !v.note) { F.mark('note', ''); err.textContent = T.apNoteNeeded; err.hidden = false; return; } }
-      if (data.decision === 'APPROVE') { const inp = {}; inputs.forEach(x => { if (v[x.name] !== undefined && !(Array.isArray(v[x.name]) && !v[x.name].length)) inp[x.name] = x.name === 'warrantyDays' ? Number(v[x.name]) : v[x.name]; }); if (Object.keys(inp).length) data.inputs = inp; }
+      if (data.decision === 'APPROVE') { const inp = {}; inputs.forEach(x => { if (v[x.name] !== undefined && !(Array.isArray(v[x.name]) && !v[x.name].length)) inp[x.name] = x.name === 'warrantyDays' ? Number(v[x.name]) : v[x.name]; }); if (F.f.allowScope) { if (v.allowScope === 'ALL') inp.allowedUsers = 'ALL'; else delete inp.allowedUsers; if (v.allowScope === 'LIST') inp.allowedUsers = v.allowedUsers || []; } if (Object.keys(inp).length) data.inputs = inp; }
       busy = true; b.disabled = true; const x = await callConfirmed('approvals.decide', data); busy = false; b.disabled = false;
       if (x.cancelled) return;
       if (!x.ok) { if (x.field) F.mark(x.field, ''); if (x.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); if (x.code === 'PAIR_CODE_WRONG') F.mark('pairCode', ''); err.textContent = x.msg; err.hidden = false; return; }

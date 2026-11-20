@@ -12,7 +12,7 @@ Object.assign(T, {
   shTitle: 'Shipments and bills', shAdd: 'Add shipment / bill', shEdit: 'Edit bill', shId: 'Shipment', shBillTotal: 'Bill total', shReceivedOn: 'Received on', shNone: 'No shipment recorded yet. Warranty runs from the receive date until the bill is entered.',
   shStockIds: 'Move these laptops into this shipment (Stock IDs, separated by commas)', shSaved: 'Bill saved. {n} laptops updated.', shWarrantyHint: 'Dealer warranty is counted from the bill date.',
   poLaptops: 'Laptops received', poResult: 'Result', poClose: 'Close PO', poCloseTitle: 'Close {po}', poCloseReason: 'Reason for closing (required when items are short)', poCloseIntro: 'Items not yet received will be recorded as not received.', poClosed: 'Purchase order closed.',
-  poReopen: 'Reopen PO', poReopened: 'Purchase order reopened.', lotRates: 'Lot rates', lotTitle: 'Unit rates of lot — line {n}', lotIntro: 'Enter the rate of every unit. The rates must add up to the lot total ({total}).', lotNone: 'No units received on this line yet.',
+  poReopen: 'Reopen PO', poReopened: 'Purchase order reopened.', poReopenTitle: 'Reopen {po}', poReopenIntro: 'The purchase order opens again for receiving. The owner is told the reason.', poReopenReason: 'Reason for reopening', poReopenShort: 'Enter the reason for reopening (at least 3 characters).', lotRates: 'Lot rates', lotTitle: 'Unit rates of lot — line {n}', lotIntro: 'Enter the rate of every unit. The rates must add up to the lot total ({total}).', lotNone: 'No units received on this line yet.',
   dlTitle: 'Dealers and partners', dlAdd: '+ Add dealer / partner', dlName: 'Name', dlCat: 'Supplies', dlPhone: 'Phone', dlAddTitle: 'Add dealer / partner', dlEditTitle: 'Edit dealer / partner', dlRequestNote: 'Your request goes for approval. The dealer appears in lists after it is approved.', dlEmpty: 'No dealers yet.',
   rcTitle: 'Receive goods', rcBanner: 'Laptops that power on are received with the pendrive. Use this screen only for laptops that cannot be scanned, parts, accessories and parcels.',
   rcTabLaptop: 'Laptop that cannot be scanned', rcTabPart: 'Part', rcTabAcc: 'Accessory', rcTabParcel: 'Parcel log', rcSource: 'Receive against', rcNoPo: 'No purchase order', rcReplacement: 'Replacement for a returned laptop', rcLocal: 'Local purchase (no PO)',
@@ -26,7 +26,7 @@ Object.assign(T, {
   ouReturned: 'Returned', ouOutcome: 'Outcome', ouEmpty: 'Nothing is outside at the moment.', ouSend: 'Send outside (no scan)', ouReturn: 'Record return (no scan)', ouClose: 'Close dealer return', ouSettle: 'Dealer returns to settle',
   ouSendTitle: 'Send outside without scan', ouSendIntro: 'Only for a laptop that cannot be scanned, or a customer job that does not start. Everything else is sent out with the pendrive.', ouItemCode: 'Stock ID or job number (GJ / RJ)',
   ouPartnerOther: 'Partner name (when not in the list)', ouStaff: 'Staff member', ouJob: 'Job number (RJ)', ouWorkReq: 'Work to be done', ouTrackHint: 'Required for dealer returns.', ouReceipt: 'Receipt photo (optional)',
-  ouReturnTitle: 'Return from outside — {id}', ouWorkDone: 'Work done', ouPaid: 'Vendor\'s total charge for this work (an advance already entered in the cash book is not counted twice)', ouReturnDone: 'Returned. Please check it in Repair.', ouCloseTitle: 'Close dealer return — {id}', ouCost: 'Cost of outside work', ouCredit: 'Credit note no.',
+  ouReturnTitle: 'Return from outside — {id}', ouWorkDone: 'Work done', ouPaid: 'Vendor\'s total charge for this work (an advance already entered in the cash book is not counted twice)', ouReturnDone: 'Returned. Please check it in Repair.', ouPaidHow: 'Paid how', ouPaidCash: 'Cash from the shop drawer', ouPaidNot: 'Not paid yet', ouCloseTitle: 'Close dealer return — {id}', ouCost: 'Cost of outside work', ouCredit: 'Credit note no.',
   ouRefund: 'Refund / credit amount', ouReplId: 'Replacement laptop (Stock ID)', ouClosed: 'Dealer return closed.', ouExpected: 'Expected back: lamination 1 day, outside repair 3 days, dealer 7 days. The sender is responsible until it is back.',
   photoAdd: 'Add photo', photoDone: 'Photo uploaded', photoFail: 'The photo could not be read. Try another photo.'
 });
@@ -99,7 +99,7 @@ function openPo(poNo) {
     box.appendChild(h('h3', { text: T.poLaptops }));
     box.appendChild(simpleTable([{ k: 'id', l: T.fId, main: true }, { k: 'line', l: T.lnNo }, { k: 'model', l: T.fModel }, { k: 'serial', l: T.fSerial }, { k: 'result', l: T.poResult, el: x => pill('RECEIPT', x.result, x.result === 'OK' ? 'good' : 'warn') }, { k: 'shipmentId', l: T.shId },
       { k: 'rate', l: T.fRate, num: true, fmt: v => (v == null || v === '' ? '' : money(v)) }], laptops, { onRow: x => openLaptop(x.id) }));
-    box.appendChild(h('div', { class: 'btns' }, closed || po.status === 'RECEIVED' ? btn(T.poReopen, e => runAction(e.currentTarget, 'po.reopen', { poNo }, { ok: T.poReopened }), 'sec') : null,
+    box.appendChild(h('div', { class: 'btns' }, closed || po.status === 'RECEIVED' ? btn(T.poReopen, () => actionDialog({ title: fmt(T.poReopenTitle, { po: poNo }), intro: T.poReopenIntro, action: 'po.reopen', submit: T.poReopen, fields: [{ k: 'reason', l: T.poReopenReason, t: 'text', req: true, max: 200 }], validate: v => (String(v.reason || '').trim().length < 3 ? T.poReopenShort : ''), build: v => ({ poNo, reason: String(v.reason).trim() }), ok: T.poReopened }), 'sec', { id: 'poReopen' }) : null,
       closed ? null : btn(T.poClose, () => actionDialog({ title: fmt(T.poCloseTitle, { po: poNo }), intro: T.poCloseIntro, action: 'po.close', danger: true, submit: T.poClose, fields: [{ k: 'reason', l: T.poCloseReason, t: 'area', max: 200 }], build: v => Object.assign({ poNo }, v), ok: T.poClosed }), 'sec')));
   });
   append(m.foot, h('div', { class: 'foot-btns' }, btn(T.close, () => m.close(), 'sec')));
@@ -207,6 +207,7 @@ VIEWS.receive = {
   title: T.rcTitle, perm: () => has('receive'),
   render(root, arg) {
     viewHead(root, T.rcTitle);
+    if (needLists(root)) return;   /* R31C-07: dealers / accessory items come from the lists */
     root.appendChild(note(T.rcBanner));
     const tabs = h('div', { class: 'tabs', role: 'tablist' }), msg = h('div', { id: 'rcMsg', 'aria-live': 'polite' }), pane = h('div'), linesBox = h('div');
     append(root, [tabs, msg, pane, linesBox]);
@@ -285,6 +286,7 @@ function parcelPane(root) {
   const F = mkForm([{ k: 'dealerId', l: T.fDealer, t: 'sel', o: () => dealerOpts() }, { k: 'dealerName', l: T.pcDealerName, max: 60, show: v => !v.dealerId }, { k: 'boxes', l: T.pcBoxes, t: 'int', req: true, min: 1, maxv: 99, dflt: 1 }, { k: 'awb', l: T.pcAwb, max: 40 },
     { k: 'condition', l: T.pcCond, req: true, max: 200, wide: true }, { k: 'note', l: T.fNote, t: 'area', max: 300 }]);
   const err = h('div', { class: 'errbox', role: 'alert', hidden: true }), listBox = h('div');
+  F.el.addEventListener('input', () => { S.dirty = true; }); F.el.addEventListener('change', () => { S.dirty = true; }); /* R31C-08: typed parcel details are unsaved work (no update reload) */
   const b = btn(T.pcSave, async () => {
     if (b.dataset.busy) return; err.hidden = true; const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; }
     b.dataset.busy = '1'; b.disabled = true; const r = await callConfirmed('parcel.log', F.get()); /* P1 (2.G, R5B-06): the request ID of this dialog is kept after a lost reply */ delete b.dataset.busy; b.disabled = false;
@@ -337,7 +339,14 @@ function outsideSendDialog(itemId, o) {
     extra: (body, F) => body.appendChild(h('div', { class: 'fld' }, h('span', { class: 'lbl', text: T.ouReceipt }), photoButton(T.photoAdd, 'COURIER_RECEIPT', () => normCode(F.val('itemId') || '') || 'NONE', id => { fileId = id; }))) });
   return m;
 }
-function outsideReturnDialog(mv) { return actionDialog({ title: fmt(T.ouReturnTitle, { id: mv.itemId }), action: 'outside.returnNoScan', fields: [{ k: 'workDone', l: T.ouWorkDone, t: 'area', max: 200 }, { k: 'amountPaid', l: T.ouPaid, t: 'money' }], build: v => Object.assign({ moveId: mv.moveId }, v), ok: T.ouReturnDone }); }
+/* R31C-04: how the vendor was paid (same choices as the pendrive): only cash from the drawer is cash paid out today; "Not paid yet" is paid
+   later from the cash book. Asked whenever an amount is typed - there is no default, the person must choose. */
+const paidModeOpts = () => [{ v: 'CASH', t: T.ouPaidCash }, { v: 'UPI', t: lbl('PAY', 'UPI') }, { v: 'CARD', t: lbl('PAY', 'CARD') }, { v: 'BANK', t: lbl('PAY', 'BANK') }, { v: 'NOT_PAID', t: T.ouPaidNot }];
+function outsideReturnDialog(mv) {
+  return actionDialog({ title: fmt(T.ouReturnTitle, { id: mv.itemId }), action: 'outside.returnNoScan',
+    fields: [{ k: 'workDone', l: T.ouWorkDone, t: 'area', max: 200 }, { k: 'amountPaid', l: T.ouPaid, t: 'money' }, { k: 'paidMode', l: T.ouPaidHow, t: 'sel', req: true, placeholder: true, o: paidModeOpts, show: v => Number(v.amountPaid) > 0 }],
+    build: v => { const d = Object.assign({ moveId: mv.moveId }, v); if (!(Number(d.amountPaid) > 0)) delete d.paidMode; return d; }, ok: T.ouReturnDone });
+}
 function outsideCloseDialog(mv) {
   return actionDialog({ title: fmt(T.ouCloseTitle, { id: mv.itemId }), action: 'outside.close', submit: T.ouClose,
     fields: [{ k: 'outcome', l: T.ouOutcome, t: 'sel', req: true, o: opts('MOVE_OUTCOME', ['SAME_UNIT', 'REPLACEMENT', 'REFUND_CREDIT', 'WRITTEN_OFF']) }, { k: 'cost', l: T.ouCost, t: 'money' },
