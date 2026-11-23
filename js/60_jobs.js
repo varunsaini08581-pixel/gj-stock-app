@@ -42,6 +42,11 @@ VIEWS.jobs = {
     if (arg) openJob(normSticker(arg, 'RJ'));
   }
 };
+/* R46A-04: the requests waiting for this job (job.get) - who decides them; a waiting job-without-scan request blocks Ready and delivery */
+Object.assign(T, { jbApprWait: 'Waiting for approval: {id} ({type}), decided by {who}.', jbApprOwner: 'the owner', jbApprMgr: 'the manager or the owner',
+  jbDeliverWait: 'Do not hand the laptop over yet: request {id} ({type}) is waiting for approval by {who}. The delivery is refused until it is approved.' });
+const jobApprWho = a => (a.who === 'ADMIN' ? T.jbApprOwner : T.jbApprMgr);
+const jobNoScanWait = j => (j.approvals || []).find(a => a.type === 'JOB_NO_SCAN');
 function openJob(id) {
   const m = openModal({ title: fmt(T.jbCard, { id }), full: true });
   m.reload = load(m.body, 'job.get', { id }, (r, box) => drawJob(box, r.job, m));
@@ -53,6 +58,7 @@ function drawJob(box, j, m) {
   m.titleEl.textContent = fmt(T.jbCard, { id: j.id }) + (j.customer ? ' — ' + j.customer : '');
   box.appendChild(h('div', { class: 'chips' }, pill('JOB_STATUS', j.status), j.type ? pill('JOB_TYPE', j.type, 'plain') : null, j.category ? pill('JOB_CAT', j.category, 'plain') : null, awaiting(j) ? h('span', { class: 'pill warn', text: T.jbAwaiting }) : null,
     j.comebackOf ? h('span', { class: 'pill warn', text: fmt(T.jbComeback, { id: j.comebackOf }) }) : null));
+  (j.approvals || []).forEach(a => box.appendChild(note(fmt(T.jbApprWait, { id: a.id, type: lbl('APPR_TYPE', a.type), who: jobApprWho(a) }), 'warn'))); /* R46A-04 */
   if (!full) {
     box.appendChild(h('div', { class: 'card' }, kv([[T.fCustomer, j.customer], [T.fModel, modelText(j)], [T.jbReady, j.readyAt ? fmtDT(j.readyAt) : ''], [T.jbDue, (j.amountDue != null && j.amountDue !== '') || (j.finalAmount != null && j.finalAmount !== '') ? money(j.amountDue != null && j.amountDue !== '' ? j.amountDue : j.finalAmount) : '']])));
   } else {
@@ -147,7 +153,8 @@ function deliverBox(j) {
     if (!r.ok) { F.clearErr(); if (r.field) F.mark(r.field, ''); if (r.code === 'PICKUP_PIN_WRONG') { F.set('customerPin', ''); F.mark('customerPin', ''); } if (r.code === 'AUTH_PIN_WRONG') F.mark('pin', ''); err.textContent = r.msg; err.hidden = false; return; }
     notify(T.jbDelivered, 'ok'); refresh();
   }, '', { id: 'jobDeliver' });
-  return h('div', { class: 'card', id: 'deliverBox' }, h('h3', { text: T.jbDeliver }), F.el, err, h('div', { class: 'btns' }, b));
+  const nsw = jobNoScanWait(j); /* R46A-04: said before the counter fills the form (the server stays the guard: the request may be decided meanwhile) */
+  return h('div', { class: 'card', id: 'deliverBox' }, h('h3', { text: T.jbDeliver }), nsw ? note(fmt(T.jbDeliverWait, { id: nsw.id, type: lbl('APPR_TYPE', nsw.type), who: jobApprWho(nsw) }), 'bad') : null, F.el, err, h('div', { class: 'btns' }, b));
 }
 function jobEditDialog(j) {
   const lockedMobile = yes(j.slipSent) && !isMgr();

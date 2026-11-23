@@ -1,5 +1,9 @@
 /* GJ App v4 — V14 parts, V15 accessories. */
 'use strict';
+/* R46A-06: the source of a part in words (server: PO, NO_PO, PULLED:<job or laptop>) */
+Object.assign(C, { PART_SOURCE: { PO: 'Purchase order', NO_PO: 'Received without a purchase order' } });
+Object.assign(T, { ptPulledFrom: 'Taken out of {ref}' });
+function partSource(s) { s = String(s || ''); const m = /^PULLED:(.*)$/.exec(s); return m ? fmt(T.ptPulledFrom, { ref: m[1] }) : lbl('PART_SOURCE', s); }
 Object.assign(C, { ACC_GROUP: { KIT: 'Standard kit item', ACCESSORY: 'Accessory' }, PART_MOVE: { RECEIVED: 'Received', FITTED: 'Fitted', UNDONE: 'Fitting undone', PULLED: 'Pulled', FAULTY: 'Marked faulty', TO_DEALER: 'Sent to dealer', DEALER_CLOSED: 'Dealer return closed', IN_STOCK: 'Back in stock', SOLD: 'Sold', EDITED: 'Edited' } });
 Object.assign(T, {
   ptTitle: 'Parts', ptSearch: 'Part ID, serial number or specification', ptEmpty: 'No parts match.', ptSummary: 'In stock by type and specification', ptInStock: 'In stock', ptReorder: 'Reorder level', ptLow: 'Low stock', ptOkStock: 'Enough', ptId: 'Part',
@@ -52,7 +56,7 @@ function openPart(code) {
     const p = r.part || {}, st = p.status, mg = has('parts.manage'), can = has('parts');
     m.titleEl.textContent = fmt(T.ptCard, { id: p.partId || code });
     box.appendChild(h('div', { class: 'chips' }, pill('PART_STATUS', st)));
-    box.appendChild(h('div', { class: 'card' }, kv([[T.cType, lbl('PART_TYPE', p.type)], [T.cSpec, p.spec], [T.fSerial, p.serial], [T.ptTarget, p.target], [T.ptReceived, p.receivedOn || p.addedAt ? fmtDate(p.receivedOn || p.addedAt) : ''], [T.ptSource, p.source], [T.fDealer, p.dealerName], [T.fPo, p.poNo], [T.acRate, p.rate != null && p.rate !== '' ? money(p.rate) : '']])));
+    box.appendChild(h('div', { class: 'card' }, kv([[T.cType, lbl('PART_TYPE', p.type)], [T.cSpec, p.spec], [T.fSerial, p.serial], [T.ptTarget, p.target], [T.ptReceived, p.receivedOn || p.addedAt ? fmtDate(p.receivedOn || p.addedAt) : ''], [T.ptSource, partSource(p.source)] /* R46A-06 */, [T.fDealer, p.dealerName], [T.fPo, p.poNo], [T.acRate, p.rate != null && p.rate !== '' ? money(p.rate) : '']])));
     const A = h('div', { class: 'btns', id: 'partActions' }), id = p.partId;
     const dlg = (text, o, cls) => A.appendChild(btn(text, () => actionDialog(o), cls || 'sec'));
     if (can && st === 'IN_STOCK') A.appendChild(btn(T.ptFit, () => fitPartDialog('', id), ''));

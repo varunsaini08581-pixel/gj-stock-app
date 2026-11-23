@@ -329,7 +329,8 @@ function actionDialog(c) {
   }
   m.body.appendChild(F.el);
   if (c.extra) c.extra(m.body, F, m);
-  append(m.foot, [errBox, h('div', { class: 'foot-btns' }, btn(T.cancel, () => m.requestClose(), 'sec'), save)]);
+  /* R46A-09: next to an action that cancels something ("Cancel reservation", "Cancel job" ...) the close button says Close, not Cancel */
+  append(m.foot, [errBox, h('div', { class: 'foot-btns' }, btn(/^cancel\b/i.test(c.submit || '') ? T.close : T.cancel, () => m.requestClose(), 'sec'), save)]);
   if (c.disableUntilChanged) { save.disabled = true; F.el.addEventListener('input', upd); F.el.addEventListener('change', upd); }
   function upd() { save.disabled = !Object.keys(F.changed()).length; }
   function fail(msg) { errBox.textContent = msg; errBox.hidden = false; }
@@ -403,7 +404,8 @@ function buildTable(cols, rows, o) {
   return h('div', { class: 'tblwrap' }, table);
 }
 function simpleTable(cols, rows, o) { o = o || {}; return rows && rows.length ? buildTable(cols, rows, o) : h('p', { class: 'empty', text: o.empty || T.noRows }); }
-function csvCell(v) { let s = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+/* R49A-04: a plain number (a loss, -8000) stays a number; any other cell starting with = + - @ TAB CR keeps the formula guard */
+function csvCell(v) { let s = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s; return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
 function downloadCsv(name, cols, rows) {
   const cc = cols.filter(c => !c.act && !c.noCsv);
   /* UI-09 / UI-05: every column has a header; no Devanagari gloss in a CSV header (Excel on the counter PC) */

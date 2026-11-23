@@ -6,6 +6,7 @@ Object.assign(T, {
   regErased: 'This device is not registered (or its saved key was erased by the browser).', regGone: 'This device has been disabled or is no longer recognised. Please register it again.',
   regRejected: 'The request for this device was rejected or removed. You can register again.',
   regIos: 'Add GJ App to the Home Screen first, then register. (Share button → "Add to Home Screen", then open GJ App from the Home Screen.)',
+  rescueCode: 'Rescue code (owner only)', rescueHint: 'Shown by rescueAdminDevice() in the script editor, e.g. AB2C-D3EF.',
   devName: 'Device name', devNamePh: 'e.g. Repair Desktop / Sales Counter', yourMobile: 'Your mobile number', yourPinL: 'Your PIN', register: 'Register',
   pendTitle: 'Waiting for approval', pendMsg: 'The request has been sent to the owner. This device will work as soon as it is approved.', pairCode: 'Pairing code (the owner types this code when approving)',
   checkStatus: 'Check status', stillPending: 'Still waiting for approval.', startFail: 'Could not reach the server. This device stays registered. Check the internet connection and try again.',
@@ -263,7 +264,10 @@ async function resumePending(p) {
 function showRegister(msg, pending) {
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
   if (ios) { stage([h('h1', { text: T.regTitle }), note(T.regIos, 'warn')]); return; }
-  const F = mkForm([{ k: 'label', l: T.devName, ph: T.devNamePh, req: true, max: 40, wide: true }, { k: 'mobile', l: T.yourMobile, t: 'mobile', req: true }, { k: 'pin', l: T.yourPinL, t: 'pin', req: true }], pending ? { label: pending.label } : {});
+  /* RV48-01: the owner's one-time rescue code - the field is shown only after the server asked for it (REG_RESCUE_CODE) */
+  let askRescue = false;
+  const F = mkForm([{ k: 'label', l: T.devName, ph: T.devNamePh, req: true, max: 40, wide: true }, { k: 'mobile', l: T.yourMobile, t: 'mobile', req: true }, { k: 'pin', l: T.yourPinL, t: 'pin', req: true }, { k: 'rescue', l: T.rescueCode, max: 12, wide: true, hint: T.rescueHint, show: () => askRescue }], pending ? { label: pending.label } : {});
+  F.sync();
   const err = h('div', { class: 'errbox', role: 'alert', hidden: true }); const b = btn(T.register, submit);
   stage([h('h1', { text: T.regTitle }), msg ? note(msg, 'warn') : null, h('p', { class: 'intro', text: T.regIntro }), F.el, err, h('div', { class: 'foot-btns' }, b)]);
   let busy = false;
@@ -273,8 +277,8 @@ function showRegister(msg, pending) {
     busy = true; b.disabled = true; const v = F.get();
     try {
       if (!pending || pending.label !== v.label) pending = await Net.createPending(v.label);
-      const r = await api('device.register', { deviceId: pending.id, secret: pending.secret, label: v.label, kind: 'WEB', agent: navigator.userAgent.slice(0, 160), mobile: v.mobile, pin: v.pin, version: APP_VERSION }, { unsigned: true, noSession: true, deviceId: pending.id, raw: true });
-      if (!r.ok) { err.textContent = r.msg || T.netFail; err.hidden = false; return; }
+      const r = await api('device.register', { deviceId: pending.id, secret: pending.secret, label: v.label, kind: 'WEB', agent: navigator.userAgent.slice(0, 160), mobile: v.mobile, pin: v.pin, rescue: v.rescue, version: APP_VERSION }, { unsigned: true, noSession: true, deviceId: pending.id, raw: true });
+      if (!r.ok) { err.textContent = r.msg || T.netFail; err.hidden = false; if (r.code === 'REG_RESCUE_CODE' && !askRescue) { askRescue = true; F.sync(); soon(() => F.f.rescue.inp.focus()); } return; }
       await Net.confirmPending(); S.deviceLabel = v.label;
       if (r.status === 'APPROVED') { await Net.syncTime(); startSession(); } else showPending(r.pairCode);
     } catch (e) { console.error(e); err.textContent = T.storageBlocked; err.hidden = false; } finally { busy = false; b.disabled = false; }

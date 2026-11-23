@@ -64,6 +64,8 @@ td .chips{margin:0}
 .kv dt{color:var(--muted);font-weight:600}
 .kv dd{margin:0;overflow-wrap:anywhere}
 .cols2{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+/* R46A-08: a long pill (scan status) wraps inside its card instead of widening the laptop card past a 360 px phone */
+.cols2>*{min-width:0}.kv dd{min-width:0}.kv dd .pill{white-space:normal;max-width:100%}
 .sect{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:16px 0 6px}
 .sect h2,.sect h3{margin:0}
 .big{font-size:44px;font-weight:800;color:var(--navy);text-align:center;line-height:1.1}

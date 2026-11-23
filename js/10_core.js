@@ -210,6 +210,8 @@ const has = p => !!(S.me && Array.isArray(S.me.perms) && S.me.perms.indexOf(p) >
 const role = () => (S.me ? S.me.role : '');
 const isAdmin = () => role() === 'ADMIN';
 const isMgr = () => role() === 'ADMIN' || role() === 'MANAGER';
+/* RV48-06: the EFFECTIVE manager role of the server rules (isMgr_: staff with "Acting Until" act as the manager) - for gates that mirror them */
+const isMgrEff = () => isMgr() || !!(S.me && S.me.acting);
 /* Lists from meta.lists (always an object, so views never crash when it failed to load). */
 function L() { return S.lists || { brands: [], ramGb: [], storage: [], partTypes: [], specs: {}, problems: [], outsideReasons: [], custWarrantyDays: [], kit: [], accItems: [], users: [], partners: [], dealers: [], config: {} }; }
 const userName = id => { const u = (L().users || []).find(x => x.userId === id); return u ? u.name : (id || ''); };

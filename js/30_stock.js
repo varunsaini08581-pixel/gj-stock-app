@@ -10,6 +10,7 @@ Object.assign(T, {
   costBlock: 'Purchase and cost', dealerBlock: 'Dealer and purchase order', healthBlock: 'Health and checks', pct: '{n}%', warrantyNone: 'None', unknownDealer: 'Unknown',
   transitBox: 'In transit: sent by {by} to {to} ({at}). It remains the sender\'s responsibility (Custody / ज़िम्मेदारी) until it is accepted.',
   outsideBox: 'Outside the shop: {reason} — {partner}. Sent by {by}. Due back {due}.', outsideLate: 'Overdue', reserveBox: 'Reserved for {customer} until {till} ({id}).',
+  reqBox: 'Sale requested for {customer} at the agreed price of {price}, kept until {till} ({id}).', transitPendrive: 'The receiver accepts it with the GJ Pendrive (Accept handover).', /* R46A-02, R46A-07 */
   pickupBox: 'Sold — awaiting pickup by the customer.', partsFitted: 'Parts fitted / pulled', lastMoves: 'Last movements', openApprovals: 'Requests waiting for approval', saleBlock: 'Sale',
   bStatus: 'Change status', bHandTo: 'Hand over to {to} (no scan)', bAccept: 'Accept handover (no scan)', bCancelHand: 'Cancel handover', bOutside: 'Send outside (no scan)', bOutReturn: 'Return from outside (no scan)',
   bReserve: 'Reserve', bReserveCancel: 'Cancel reservation', bSell: 'Sell', bSaleRequest: 'Request sale', bEdit: 'Edit', bRate: 'Change rate', bSerial: 'Correct serial number', bUnscannable: 'Mark as cannot be scanned',
@@ -73,9 +74,9 @@ function drawLaptop(box, r, m) {
   const head = h('div', { class: 'chips' }, pill('STATE', it.state), it.state === 'ACTIVE' || it.state === 'PENDING' ? pill('STATUS', it.status) : null, pill('LOCATION', it.location, 'plain'), it.verified === 'N' ? pill('VERIFIED', 'N') : null);
   (it.flags || []).forEach(f => head.appendChild(pill('FLAG', f, f === 'MISSING' || f === 'UNFIT' ? 'bad' : 'warn')));
   box.appendChild(head);
-  if (it.transit) box.appendChild(note(fmt(T.transitBox, { by: userName(it.transit.by), to: lbl('SECTION', it.transit.to), at: fmtDT(it.transit.at) }), 'warn'));
+  if (it.transit) box.appendChild(note(fmt(T.transitBox, { by: userName(it.transit.by), to: lbl('SECTION', it.transit.to), at: fmtDT(it.transit.at) }) + (unscannable(it) ? '' : ' ' + T.transitPendrive), 'warn')); /* R46A-07: a laptop that scans is accepted with the pendrive - said where the to-do leads */
   if (it.outside) box.appendChild(note([fmt(T.outsideBox, { reason: lbl('OUT_REASON', it.outside.reason), partner: it.outside.partner || T.notSet, by: userName(it.outside.by), due: fmtDT(it.outside.dueAt) }), it.outside.late === 'Y' || it.outside.late === true ? h('b', { text: ' ' + T.outsideLate }) : null], it.outside.late === 'Y' || it.outside.late === true ? 'bad' : 'warn'));
-  if (it.reserve) box.appendChild(note(fmt(T.reserveBox, { customer: it.reserve.customer, till: fmtDate(it.reserve.expiresAt), id: it.reserve.id }), 'warn'));
+  if (it.reserve) box.appendChild(note(it.reserve.kind === 'SALE_REQUEST' && Number(it.reserve.price) > 0 ? fmt(T.reqBox, { customer: it.reserve.customer, price: money(it.reserve.price), till: fmtDate(it.reserve.expiresAt), id: it.reserve.id }) : fmt(T.reserveBox, { customer: it.reserve.customer, till: fmtDate(it.reserve.expiresAt), id: it.reserve.id }), 'warn')); /* R46A-02 */
   if ((it.flags || []).indexOf('AWAITING_PICKUP') >= 0 || (it.flags || []).indexOf('PICKUP_PENDING') >= 0) box.appendChild(note(T.pickupBox, 'warn'));
   const wl = it.warrantyDaysLeft;
   const left = h('div', { class: 'card' }, kv([[T.fModel, modelText(it)], [T.fType, lbl('TYPE', it.type)], [T.fCpu, it.cpu], [T.fRamSt, ramSt(it)], [T.fTouch, lbl('TOUCH', it.touch)], [T.fSerial, it.serial], [T.fCharger, lbl('CHARGER', it.charger)],
@@ -109,8 +110,8 @@ function drawLaptop(box, r, m) {
     if (om && (isMgr() || role() === 'REPAIR')) add(T.bOutReturn, () => outsideReturnDialog({ moveId: om, itemId: it.id }));
   }
   if (has('reserve') && active && it.status === 'READY' && it.location === 'SALES' && !it.reserve) add(T.bReserve, () => reserveDialog(it));
-  if (has('reserve') && it.reserve) add(T.bReserveCancel, () => reserveCancelDialog(it.reserve.id, it.reserve.advance));
-  if (has('sale.create') && active && (it.location === 'SALES' || (it.outside && it.outside.reason === 'ON_APPROVAL')) && !it.transit) add(T.bSell, () => { m.close(); go('sell', it.id); }, '');
+  if (has('reserve') && it.reserve) add(T.bReserveCancel, () => reserveCancelDialog(it.reserve.id, it.reserve.advance, it.reserve.byId, it.reserve.advanceMode)); /* R46A-01 */
+  if (has('sale.create') && active && (it.location === 'SALES' || (it.outside && it.outside.reason === 'ON_APPROVAL')) && !it.transit) add(T.bSell, () => { m.close(); if (it.reserve) sellFrom({ stockId: it.id, customer: it.reserve.customer, kind: it.reserve.kind, price: it.reserve.price, byId: it.reserve.byId }); go('sell', it.id); }, ''); /* R46A-02 */
   if (!has('sale.create') && has('sale.request') && active && it.status === 'READY' && it.location === 'SALES') add(T.bSaleRequest, () => saleRequestDialog(it), '');
   if (has('stock.edit') && it.state !== 'VOID' && (isMgr() || (it.verified === 'N' && it.location === 'REPAIR'))) add(T.bEdit, () => editDialog(it));
   if (has('stock.rate')) add(T.bRate, () => actionDialog({ title: fmt(T.rateTitle, { id: it.id }), action: 'stock.rateEdit', fields: [{ k: 'rate', l: T.rateNew, t: 'money', req: true, min: 1, dflt: it.purchaseRate }, { k: 'reason', l: T.fReason, req: true, max: 200, wide: true }], build: v => ({ id: it.id, rate: v.rate, reason: v.reason }) }));

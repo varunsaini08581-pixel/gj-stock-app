@@ -1,11 +1,24 @@
 /* GJ App v4 — V19 approvals, V20 alerts and incidents, V21 dashboard. */
 'use strict';
 Object.assign(C, {
-  APPR_INPUT: { rate: 'Purchase rate', dealerId: 'Dealer', billNo: 'Dealer bill no.', billDate: 'Dealer bill date', warrantyDays: 'Dealer warranty', value: 'Exchange / buyback value', payMode: 'Payment mode', payee: 'Paid to', refund: 'Refund amount', refundMode: 'Refund mode', pairCode: 'Pairing code shown on the new device', replaceDeviceId: 'Replace this existing device', tagPrice: 'Tag price', minPrice: 'Minimum price', allowedUsers: 'Users allowed on this device', label: 'Device name', amount: 'Amount received for the laptop' },
+  APPR_INPUT: { rate: 'Purchase rate', dealerId: 'Dealer', billNo: 'Dealer bill no.', billDate: 'Dealer bill date', warrantyDays: 'Dealer warranty', value: 'Exchange / buyback value', payMode: 'Payment mode', payee: 'Paid to', refund: 'Refund amount', refundMode: 'Refund mode', pairCode: 'Pairing code shown on the new device', replaceDeviceId: 'Replace this existing device', tagPrice: 'Tag price', minPrice: 'Minimum price', allowedUsers: 'Users allowed on this device', label: 'Device name', amount: 'Amount received for the laptop', extrasBack: 'Accessories sold on this bill came back' },
   REC_FIELD: { id: 'Stock ID', brand: 'Brand', model: 'Model', cpu: 'Processor', ramGb: 'RAM (GB)', storage: 'Storage', serial: 'Serial No.', status: 'Status', state: 'State', location: 'Section', scanMode: 'Scan mode', source: 'Source', charger: 'Charger', sticker: 'Sticker', dealerName: 'Dealer', poNo: 'Purchase order', line: 'PO line', arrivedOn: 'Arrival date', billNo: 'Bill no.', billDate: 'Bill date', warrantyDays: 'Dealer warranty (days)', purchaseRate: 'Purchase rate', rate: 'Rate', price: 'Price', minPrice: 'Minimum price', tagPrice: 'Tag price', customer: 'Customer', mobile: 'Mobile number', reason: 'Reason', note: 'Note', kind: 'Kind', qty: 'Quantity', item: 'Item', battHealth: 'Battery health (%)', diskLife: 'Disk life (%)', unfitCodes: 'Unfit codes', lockCodes: 'Lock codes', label: 'Device name', agent: 'Browser', deviceKind: 'Device kind', requestedBy: 'Requested by', usbSerial: 'USB serial', jobId: 'Job', partner: 'Partner', work: 'Work', seller: 'Seller', idType: 'ID type', idLast4: 'ID last 4 digits', declaration: 'Declaration confirmed', originalBill: 'Original bill', mode: 'Mode', lockCode: 'Lock type', type: 'Type', spec: 'Specification', saleId: 'Sale', refundMax: 'Sale price', fitLevel: 'Fit level', ram: 'RAM modules', disks: 'Disks', battery: 'Battery', screen: 'Screen', activation: 'Windows activation', lastScan: 'Last scan', partsUsed: 'Parts used', text: 'Details' },
   REC_CODE: { status: 'STATUS', state: 'STATE', location: 'LOCATION', scanMode: 'SCAN_MODE', source: 'SOURCE', charger: 'CHARGER', mode: 'SCAN_MODE', lockCode: 'UNFIT', idType: 'ID_TYPE', deviceKind: 'DEVICE_KIND', fitLevel: 'FIT', declaration: 'YN', originalBill: 'YN', activation: 'ACTIVATION' },
   ACTIVATION: { ACTIVATED: 'Activated', KMS: 'Activated by KMS (temporary)', NOT_ACTIVATED: 'Not activated', UNKNOWN: 'Not known', NA: 'Not applicable (macOS)' }
 });
+/* R46A-05: request details and the hardware table in words - no internal codes, no true / false. Field codes with a known list; any other
+   CODE_WITH_UNDERSCORES is looked up in the app's label lists (REC_CODE_ANY, first match), else spelled out. Hardware snapshot keys named. */
+Object.assign(C.REC_CODE, { kind: 'WRITEOFF', entry: 'SOURCE', result: 'RECEIPT', touch: 'TOUCH', act: 'ACTIVATION' });
+Object.assign(C.REC_FIELD, { b: 'Battery', r: 'RAM modules', d: 'Disks', scr: 'Screen', act: 'Windows activation', touch: 'Touch', present: 'Present', sn: 'Serial No.', design: 'Design capacity (mWh)' });
+const REC_CODE_ANY = ['SCAN_MODE', 'WRITEOFF', 'ACC_REASON', 'RECEIPT', 'SOURCE', 'TOUCH', 'UNFIT', 'PROBLEM', 'ZERO_REASON', 'OUT_REASON', 'NOSCAN_REASON', 'APPR_TYPE', 'STATUS', 'LOCATION', 'PAY', 'ACTIVATION', 'HW_DIFF'];
+function recCode(group, v, k) {
+  const s = String(v);
+  if (!group && /serial|^sn$|Sn$|id$|Id$|No$|code$|Code$|hash|Hash|usb|Usb|sticker|label|bill|Bill/.test(k || '')) return s; /* identifiers stay as typed */
+  if (group && C[group] && Object.prototype.hasOwnProperty.call(C[group], s)) return C[group][s];
+  if (!/^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(s)) return group ? lbl(group, s) : s;
+  const g = REC_CODE_ANY.find(x => C[x] && Object.prototype.hasOwnProperty.call(C[x], s));
+  return g ? C[g][s] : humanCode(s);
+}
 /* round 32: approving a device asks who may sign in on it - an explicit choice, never "all staff" because a box was left empty */
 Object.assign(T, { apAllowScope: 'Who may sign in on this device', apAllowAll: 'All staff', apAllowList: 'Only the people ticked below',
   apAllowNoList: 'The staff list could not be loaded, so nobody can be ticked. Reload the page, or choose "All staff" if that is what you want.' });
@@ -26,13 +39,14 @@ Object.assign(T, {
 const STOCK_OUTCOME_TYPES = ['PO_MISMATCH', 'PO_EXTRA', 'SERIAL_NOT_ON_PO', 'UNFIT_ACCEPT'];
 function recValue(k, v) {
   if (v == null || v === '') return '';
-  if (Array.isArray(v)) return v.map(x => (typeof x === 'object' ? Object.keys(x).map(y => x[y]).join(' ') : (/Codes$/.test(k) ? lbl('UNFIT', x) : String(x)))).join(', ');
+  if (v === true || v === false) return lbl('YN', v ? 'Y' : 'N'); /* R46A-05 */
+  if (Array.isArray(v)) return v.map(x => (typeof x === 'object' ? Object.keys(x).map(y => x[y]).join(' ') : (/Codes$/.test(k) ? lbl('UNFIT', x) : recCode('', x)))).join(', ');
   if (typeof v === 'object') return Object.keys(v).map(y => (C.REC_FIELD[y] || humanCode(y)) + ': ' + recValue(y, v[y])).join('; ');
-  if (C.REC_CODE[k]) return lbl(C.REC_CODE[k], v);
+  if (C.REC_CODE[k]) return recCode(C.REC_CODE[k], v);
   if (/(Rate|rate|price|Price|value|Value|refundMax|advance)$/.test(k) && /^\d+$/.test(String(v))) return money(v);
   if (/(On|Date|Till)$/.test(k) && /^\d{4}-\d{2}-\d{2}/.test(String(v))) return fmtDT(v);
   if (/By$/.test(k)) return userName(v);
-  return String(v);
+  return recCode('', v, k); /* R46A-05 */
 }
 const isMine = v => !!S.me && (v === S.me.userId || v === S.me.name);   /* server sends user NAMES in by / sentBy */
 /* approvals.get adapter: the server puts inputs / outcomes / record / refRates / photos / replaceable on the approval, the raw request data in details */
@@ -142,6 +156,7 @@ function openApproval(id) {
         case 'rate': case 'value': case 'refund': case 'tagPrice': case 'minPrice': case 'amount': return Object.assign(base, { t: 'money', min: x.name === 'refund' ? 0 : 1 });
         case 'dealerId': return Object.assign(base, { t: 'sel', o: () => dealerOpts() }); case 'billDate': return Object.assign(base, { t: 'date', maxToday: true });
         case 'warrantyDays': return Object.assign(base, { t: 'sel', o: warrantyOpts }); case 'payMode': case 'refundMode': return Object.assign(base, { t: 'sel', o: payOpts1 });
+        case 'extrasBack': return Object.assign(base, { t: 'sel', wide: true, l: Array.isArray(d.extras) && d.extras.length ? l + ': ' + d.extras.map(e => e.item + (Number(e.qty) > 1 ? ' x' + e.qty : '')).join(', ') : l, o: [{ v: 'Y', t: T.yes }, { v: 'N', t: T.no }] }); /* R54A-04 */
         case 'pairCode': return Object.assign(base, { t: 'code', cam: false, max: 6 }); case 'replaceDeviceId': return Object.assign(base, { t: 'sel', req: false, ph: T.apNoReplace, o: (d.replaceable || []).map(v => ({ v: v.deviceId, t: v.label })) });
         /* round 32: "Users allowed" comes with a required choice: all staff, or only the people ticked (then at least one is required) */
         case 'allowedUsers': return [{ k: 'allowScope', l: T.apAllowScope, t: 'sel', req: true, placeholder: true, wide: true, o: [{ v: 'ALL', t: T.apAllowAll }, { v: 'LIST', t: T.apAllowList }] },
@@ -156,6 +171,7 @@ function openApproval(id) {
       else { if (F.f.allowScope && v.allowScope === 'LIST' && !userOpts().length) { F.mark('allowScope', ''); err.textContent = T.apAllowNoList; err.hidden = false; return; }
         const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; } }
       const data = { id: a.id || id, decision, pin: v.pin }; if (v.note) data.note = v.note;
+      data.scanCount = a.scanCount == null || a.scanCount === '' ? '1' : String(a.scanCount); /* R51A-03 / -04: the version of the card shown - the server refuses (APPR_CHANGED) when it was scanned again since */
       if (needOutcome) { data.outcome = v.outcome; data.decision = v.outcome === 'ACCEPT' ? 'APPROVE' : 'REJECT'; if (data.decision === 'REJECT' && !v.note) { F.mark('note', ''); err.textContent = T.apNoteNeeded; err.hidden = false; return; } }
       if (data.decision === 'APPROVE') { const inp = {}; inputs.forEach(x => { if (v[x.name] !== undefined && !(Array.isArray(v[x.name]) && !v[x.name].length)) inp[x.name] = x.name === 'warrantyDays' ? Number(v[x.name]) : v[x.name]; }); if (F.f.allowScope) { if (v.allowScope === 'ALL') inp.allowedUsers = 'ALL'; else delete inp.allowedUsers; if (v.allowScope === 'LIST') inp.allowedUsers = v.allowedUsers || []; } if (Object.keys(inp).length) data.inputs = inp; }
       busy = true; b.disabled = true; const x = await U.run(() => callConfirmed('approvals.decide', data), b); /* R37B-01: the boxes and the other button are locked after an unsure answer; the same decision is sent again */ busy = false; b.disabled = false;

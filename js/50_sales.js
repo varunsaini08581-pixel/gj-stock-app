@@ -14,7 +14,8 @@ Object.assign(T, {
   seNeedBill: 'Enter the bill number or tick "Bill pending".', seNeedPrice: 'Enter the price of {id}.', seDoneTitle: 'Sale recorded', seUnconfirmed: 'This sale is waiting for confirmation by the manager or owner.', seWarnings: 'Notes on this sale',
   seSlip: 'Sale slip', seWhatsApp: 'Send on WhatsApp', seNew: 'New sale', slipThanks: 'Thank you for buying from Genuine Junction.', slipLap: '{model} — Serial {serial} — {spec}', slipPrice: 'Price: {price}', slipWarranty: 'Warranty till: {date}', slipKit: 'Kit: {kit}', slipBill: 'Bill no.: {bill}', slipPhone: 'Shop phone: {phone}',
   saTitle: 'Sales', saFrom: 'From', saTo: 'To', saUnconfirmed: 'Only unconfirmed', saEmpty: 'No sales in this period.', saId: 'Sale', saEntered: 'Entered by', saConfirmed: 'Confirmed', saConfirmedBy: 'Confirmed by', saExchange: 'Exchange', saProfit: 'Profit', saOwnToday: 'You see your own sales of today.',
-  saCard: 'Sale {id}', saConfirm: 'Confirm sale', saCorrect: 'Correct sale', saVoid: 'Cancel sale (entry mistake)', saHanded: 'Handed over to customer', saVoidRefund: 'Money given back (if the customer had paid)', saVoidRefundHint: 'Leave empty for an entry mistake (no money moved). The amount is shown under refunds in the day close.', saVoidIntro: 'The laptop returns to stock with the status it had before. For a laptop that the customer brings back, record a customer return with the pendrive instead.',
+  saCard: 'Sale {id}', saConfirm: 'Confirm sale', saCorrect: 'Correct sale', saVoid: 'Cancel sale (entry mistake)', saHanded: 'Handed over to customer', saVoidRefund: 'Money given back (if the customer had paid)', saVoidRefundHint: 'Leave empty for an entry mistake (no money moved). The amount is shown under refunds in the day close.', /* RV55-01 (round 56): money paid above the laptops still on a bill, asked when the server names it */ saOverLabel: 'Money paid above the laptops still on this bill ({amount})', saOverKept: 'The shop keeps the extra {amount}', saOverNotPaid: 'It was an entry mistake - this money was never received', saOverNeed: 'Choose what happened to the extra {amount}.', saVoidIntro: 'The laptop returns to stock with the status it had before. For a laptop that the customer brings back, record a customer return with the pendrive instead.',
+  saExtrasBack: 'Accessories sold on this bill ({items})', saExtrasBackY: 'They came back with the laptop', saExtrasBackN: 'The customer keeps them', /* R54A-04 */
   saReturnNs: 'Customer return without scan', saReturnNsTitle: 'Customer return without scan — {id}', saReturnNsIntro: 'For a sold laptop that comes back and cannot be scanned (does not power on, no operating system, locked). The owner or another manager approves; the laptop then goes to Repair as Needs repair.', saReturnNsMode: 'Why it cannot be scanned', saRefund: 'Refund', saRefundMode: 'Refund mode', saReturnNsOk: 'Customer return sent for approval.',
   saCorrectTitle: 'Correct sale {id}', saVoidTitle: 'Cancel sale {id}', saConfirmedOk: 'Sale confirmed.', saVoided: 'Sale cancelled. The laptop is back in stock.', saHandedOk: 'Recorded as handed over.', saPickup: 'Awaiting pickup', saCostWarn: 'Cost-side notes',
   rsTitle: 'Reserve — {id}', rsAdvance: 'Advance received', rsAdvMode: 'Advance payment mode', rsExpires: 'Reserved until', rsDone: 'Reserved. Receipt {id}.', rsCancelTitle: 'Cancel reservation {id}', rsCancelFull: 'Give the customer back the full advance of {advance}. Only the manager or the owner can keep an advance.', rsRefund: 'Advance refunded', rsRefundMode: 'Refund mode', rsCancelled: 'Reservation cancelled.',
@@ -25,6 +26,10 @@ Object.assign(T, {
   exId: 'Entry', exKind: 'Kind', exSeller: 'Seller / customer', exIdProof: 'ID proof', exValue: 'Value', exPhotos: 'Photos', exPhotoMissing: 'Photo missing', exPhotoOk: 'On file', exEmpty: 'No exchange entries.', exEdit: 'Edit entry', exCancel: 'Cancel entry',
   exCancelTitle: 'Cancel exchange entry {id}', exUpId: 'Upload seller ID photo', exUpSeller: 'Upload seller photo', exCard: 'Exchange entry {id}', exHold: 'On hold until'
 });
+/* R46A-01: an advance is never refunded by the person who took it; R46A-02: the agreed price of a sale request; R46A-03: the whole bill on the slip */
+Object.assign(T, { rsOwnAdvance: 'The manager records the refund of an advance you took. Ask the manager or the owner to cancel this reservation and give the advance of {advance} back to the customer.',
+  rsOwnAdvanceSettle: 'The manager records the refund of an advance you took. Ask the manager or the owner to settle the advance of {advance}.',
+  slipExtra: '{item} x {qty}: {price}', slipTotal: 'Bill total: {total}', slipAdvance: 'Advance paid earlier: {amount}', slipExchangeVal: 'Value of the exchange laptop: {amount}', slipPaidNow: 'Paid now: {amount}', slipBalance: 'Balance due: {amount}', slipBalanceBy: 'Balance due: {amount} by {date}' });
 
 const payOpts = () => opts('PAY', ['CASH', 'UPI', 'CARD', 'BANK', 'MIXED']); /* R31C-05: the server's PAY_MODE (Sell, Deliver); "Set off on the bill" is only a day-report label */
 const payOpts1 = () => opts('PAY', ['CASH', 'UPI', 'CARD', 'BANK']); /* fix round 5: advances, refunds, parts, accessories, quick service - one mode */
@@ -46,11 +51,16 @@ VIEWS.sell = {
   render(root, arg) {
     viewHead(root, T.seTitle);
     if (needLists(root)) return;   /* R31C-07: never a sale without its kit / salesperson because the lists failed to load */
+    /* R46A-02: "Sell" on a reservation / sale request carries its customer and mobile, and for a sale request also the agreed price and the
+       staff member who asked (the salesperson of the sale). Taken once, only for the laptop it was set for. */
+    const pre = S.sellPre && arg && S.sellPre.stockId === normSticker(arg, 'GJ') ? S.sellPre : null; S.sellPre = null;
+    const preInit = pre ? { customer: pre.customer || '', mobile: pre.mobile || '' } : undefined;
+    if (pre && pre.byId && userOpts(u => u.role !== 'REPAIR').some(o => o.v === pre.byId)) preInit.salespersonId = pre.byId;
     const cost = has('cost.view'), mgr = isMgr(), items = [], extras = [];
     const scan = h('input', { type: 'text', class: 'code', id: 'sellScan', 'data-scanbox': '', 'aria-label': T.seScan, placeholder: T.seScan, autocomplete: 'off', maxlength: 20 });
     const rowsBox = h('div', { id: 'sellRows' }), totalEl = h('p', { class: 'sell-total' }), err = h('div', { class: 'errbox', role: 'alert', hidden: true }), extrasBox = h('div', { class: 'lines' });
     let seq = 0;
-    async function addItem(code) {
+    async function addItem(code, prePrice) {
       const id = normSticker(code, 'GJ'); if (!id) return;
       if (items.some(x => x.it.id === id)) { notify(fmt(T.seDup, { id }), 'bad'); return; }
       if (items.length >= 20) { notify(T.seMax, 'bad'); return; }
@@ -60,6 +70,7 @@ VIEWS.sell = {
       if (!r.ok) { notify(r.msg, 'bad'); return; }
       const price = h('input', { type: 'text', inputmode: 'numeric', class: 'num', 'aria-label': T.sePrice + ' ' + id, autocomplete: 'off' });
       price.addEventListener('input', () => { price.value = grp(digits(price.value).slice(0, 8)); S.dirty = true; drawTotal(); });
+      if (Number(prePrice) > 0) price.value = grp(String(prePrice)); /* R46A-02: the agreed price of the sale request */
       items.push({ it: r.item, price }); S.dirty = true; drawRows();
       soon(() => price.focus());
     }
@@ -81,7 +92,7 @@ VIEWS.sell = {
       mgr ? { k: 'amountReceived', l: T.seReceived, t: 'money', hint: T.seReceivedHint } : null, mgr ? { k: 'dueDate', l: T.seDueDate, t: 'date', show: v => v.amountReceived != null && v.amountReceived !== '' } : null,
       { k: 'kit', l: T.seKit, t: 'multi', o: () => (L().kit || []).map(k => (typeof k === 'object' ? { v: k.itemId, t: k.item || accName(k.itemId) } : { v: k, t: accName(k) })), dflt: (L().kit || []).map(k => (typeof k === 'object' ? k.itemId : k)) },
       { k: 'exchange', l: T.seExchange, t: 'check' }, { k: 'exCustomer', l: T.seExCustomer, max: 60, show: v => v.exchange === 'Y', hint: T.seExNote }, has('exchange.value') ? { k: 'exValue', l: T.seExValue, t: 'money', min: 1, show: v => v.exchange === 'Y', hint: T.seExValueHint } : null, { k: 'pickupLater', l: T.sePickup, t: 'check' },
-      { k: 'replacementFor', l: T.seReplFor, t: 'code', sticker: 'GJ', cam: false }, mgr ? { k: 'overrideReason', l: T.seOverride, max: 200, wide: true } : null, { k: 'pin', l: T.yourPin, t: 'pin', req: true }].filter(Boolean));
+      { k: 'replacementFor', l: T.seReplFor, t: 'code', sticker: 'GJ', cam: false }, mgr ? { k: 'overrideReason', l: T.seOverride, max: 200, wide: true } : null, { k: 'pin', l: T.yourPin, t: 'pin', req: true }].filter(Boolean), preInit);
     F.el.addEventListener('input', () => { S.dirty = true; });
     /* R37B-04: "Sale date" was filled once, when the screen was drawn - a Sell screen left open overnight (the lock keeps the screen) booked
        the next morning's sale on yesterday. dateDay = the day on which the box was last set (by the screen or by the person). When the
@@ -129,7 +140,14 @@ VIEWS.sell = {
       S.dirty = false;
       if (r.approvalId && !(r.saleIds || []).length) { notify(T.seSentApproval, 'warn'); renderRoute(); return; }   /* below the minimum price: request sent for approval, nothing sold */
       const till = addDays(v.saleDate, Number(v.warrantyDays)), kitNames = (v.kit || []).map(accName).join(', ');
-      const lines = [T.shop, v.customer + ' — ' + v.mobile].concat(items.map(x => fmt(T.slipLap, { model: modelText(x.it), serial: x.it.serial || T.notSet, spec: ramSt(x.it) }) + '\n' + fmt(T.slipPrice, { price: money(digits(x.price.value)) })),
+      /* R46A-03: the slip lists the accessories sold on the bill and the bill's money (total, advance and exchange value set off, paid now,
+         balance due) - it used to show the laptop price only */
+      const exLines = d.extras.map(e => fmt(T.slipExtra, { item: accName(e.itemId), qty: e.qty, price: money((Number(e.qty) || 0) * (Number(e.price) || 0)) }));
+      const billTot = r.saleTotal != null ? Number(r.saleTotal) : (r.billTotal != null ? Number(r.billTotal) : total()), advUsed = Number(r.advanceUsed) || 0;
+      const exVal = Number(r.exchangeValue) || (d.exchange && Number(d.exchange.value)) || 0, bal = Number(r.balanceDue) || 0;
+      const moneyLines = [fmt(T.slipTotal, { total: money(billTot) }), advUsed > 0 ? fmt(T.slipAdvance, { amount: money(advUsed) }) : '', exVal > 0 ? fmt(T.slipExchangeVal, { amount: money(exVal) }) : '',
+        (advUsed > 0 || exVal > 0 || bal > 0) && r.collectNow != null ? fmt(T.slipPaidNow, { amount: money(r.collectNow) }) : '', bal > 0 ? (d.dueDate ? fmt(T.slipBalanceBy, { amount: money(bal), date: fmtDate(d.dueDate) }) : fmt(T.slipBalance, { amount: money(bal) })) : ''];
+      const lines = [T.shop, v.customer + ' — ' + v.mobile].concat(items.map(x => fmt(T.slipLap, { model: modelText(x.it), serial: x.it.serial || T.notSet, spec: ramSt(x.it) }) + '\n' + fmt(T.slipPrice, { price: money(digits(x.price.value)) })), exLines, moneyLines,
         [Number(v.warrantyDays) > 0 ? fmt(T.slipWarranty, { date: fmtDate(till) }) : '', kitNames ? fmt(T.slipKit, { kit: kitNames }) : '', d.billNo ? fmt(T.slipBill, { bill: d.billNo }) : '', L().config && L().config.shopPhone ? fmt(T.slipPhone, { phone: L().config.shopPhone }) : '', T.slipThanks]).filter(Boolean);
       const extra = [note((r.saleIds || []).join(', ') + ' — ' + T.saved, 'ok'), r.advanceNote ? note(r.advanceNote, 'warn') : null, (Number(r.exchangeValue) > 0 || Number(r.advanceUsed) > 0) && r.collectNow != null ? note(fmt(T.seCollectNow, { amount: money(r.collectNow) }), 'warn') : null, r.confirmed === 'N' || r.confirmed === false ? note(T.seUnconfirmed, 'warn') : null,
         (r.warnings || []).length ? h('div', null, h('h3', { text: T.seWarnings }), chipList('SALE_WARN', r.warnings, 'warn')) : null];
@@ -138,7 +156,7 @@ VIEWS.sell = {
     const U = unsureGuard(err, () => $$('.card', root)); /* R37B-01 */
     append(root, [h('div', { class: 'card' }, h('div', { class: 'scanbox' }, scan, btn(T.seAdd, () => addItem(scan.value), 'sec'), btn(T.camera, () => cameraScan(addItem), 'sec')), rowsBox, totalEl),
       h('div', { class: 'card' }, F.el, h('div', { class: 'sect' }, h('h3', { text: T.seExtras }), btn(T.seExtraAdd, addExtra, 'sec sm')), extrasBox, err, h('div', { class: 'btns' }, save))]);
-    drawRows(); if (arg) addItem(arg); else soon(() => scan.focus());
+    drawRows(); if (arg) addItem(arg, pre && pre.price); else soon(() => scan.focus());
   }
 };
 
@@ -179,11 +197,21 @@ function saleDialog(s) {
       fields: [{ k: 'billNo', l: T.seBill, max: 40 }, { k: 'price', l: T.fPrice, t: 'money', min: 500 }, { k: 'customer', l: T.fCustomer, max: 60 }, { k: 'mobile', l: T.fMobile, t: 'mobile' }, { k: 'warrantyDays', l: T.seWarranty, t: 'sel', o: custWarrantyOpts },
         { k: 'saleDate', l: T.seDate, t: 'date', maxToday: true }, { k: 'salespersonId', l: T.fSalesperson, t: 'sel', o: () => userOpts() }, { k: 'payMode', l: T.sePay, t: 'sel', o: payOpts }, { k: 'moneyMode', l: T.saCorrectMoney, t: 'sel', req: true, placeholder: true, o: () => [{ v: 'NONE', t: T.saMoneyNone }].concat(['CASH', 'UPI', 'CARD', 'BANK'].map(v => ({ v, t: fmt(T.saMoneyMode, { mode: lbl('PAY', v) }) }))), show: v => v.price != null && v.price !== '' && Number(v.price) !== Number(s.price) }, { k: 'reason', l: T.fReason, t: 'area', req: true, max: 200 }],
       build: (v, F) => { const ch = F.changed(); delete ch.reason; delete ch.refundMode; if (ch.price != null && Number(ch.price) !== Number(s.price)) ch.moneyMode = v.moneyMode; else delete ch.moneyMode; /* R22-04: what happened to the money of the price difference - said by the person who corrects (nothing / given back / collected now) */ if (ch.warrantyDays != null && ch.warrantyDays !== '') ch.warrantyDays = Number(ch.warrantyDays); if (!Object.keys(ch).length) { notify(T.edNothing, 'ok'); return null; } return { saleId: s.saleId, fields: ch, reason: v.reason }; } }); }, 'sec'));
-    A.appendChild(btn(T.saVoid, () => { m.close(); actionDialog({ title: fmt(T.saVoidTitle, { id: s.saleId }), intro: T.saVoidIntro, action: 'sale.void', danger: true, submit: T.saVoid, fields: [{ k: 'reason', l: T.fReason, t: 'area', req: true, max: 200 }, { k: 'refund', l: T.saVoidRefund, t: 'money', min: 0, hint: T.saVoidRefundHint }, { k: 'refundMode', l: T.saRefundMode, t: 'sel', o: payOpts1, show: v => Number(v.refund) > 0 }],
-      build: v => Object.assign({ saleId: s.saleId, reason: v.reason }, Number(v.refund) > 0 ? { refund: v.refund, refundMode: v.refundMode || s.payMode } : {}), ok: T.saVoided }); }, 'sec'));
+    A.appendChild(btn(T.saVoid, () => { m.close();
+      /* RV55-01 (round 56): a line of a bill whose customer has paid more than the laptops still on it - the server names the amount
+         (BILL_OVERPAID_CHOICE) and the dialog asks what happened to it: the shop keeps it (KEPT) or it was never received (NOT_PAID) */
+      const ov = { x: null }, ovSel = h('select', { id: 'voidOverpaid', 'aria-required': 'true' }), ovLbl = h('label', { for: 'voidOverpaid' });
+      const ovBox = h('div', { class: 'fld wide', hidden: true, dataset: { k: 'overpaid' } }, ovLbl, ovSel);
+      const ovShow = x => { ov.x = x; ovLbl.textContent = fmt(T.saOverLabel, { amount: money(x) }); clear(ovSel); [['', T.select], ['KEPT', fmt(T.saOverKept, { amount: money(x) })], ['NOT_PAID', T.saOverNotPaid]].forEach(o => ovSel.appendChild(h('option', { value: o[0], text: o[1] }))); ovBox.hidden = false; };
+      actionDialog({ title: fmt(T.saVoidTitle, { id: s.saleId }), intro: T.saVoidIntro, action: 'sale.void', danger: true, submit: T.saVoid, fields: [{ k: 'reason', l: T.fReason, t: 'area', req: true, max: 200 }, { k: 'refund', l: T.saVoidRefund, t: 'money', min: 0, hint: T.saVoidRefundHint }, { k: 'refundMode', l: T.saRefundMode, t: 'sel', o: payOpts1, show: v => Number(v.refund) > 0 }],
+        extra: (body, F) => { F.el.appendChild(ovBox); F.el.addEventListener('input', e => { if (e.target && e.target.closest && e.target.closest('[data-k="refund"]')) { ov.x = null; ovBox.hidden = true; } }); /* another refund = another amount: asked again */ },
+        validate: () => (ov.x != null && !ovSel.value ? fmt(T.saOverNeed, { amount: money(ov.x) }) : ''),
+        run: async data => { const r = await callConfirmed('sale.void', ov.x != null && ovSel.value ? Object.assign({}, data, { overpaid: ovSel.value }) : data); if (r && !r.ok && r.code === 'BILL_OVERPAID_CHOICE' && r.overpaid != null) { ovShow(r.overpaid); soon(() => ovSel.focus()); } return r; },
+        build: v => Object.assign({ saleId: s.saleId, reason: v.reason }, Number(v.refund) > 0 ? { refund: v.refund, refundMode: v.refundMode || s.payMode } : {}), ok: T.saVoided }); }, 'sec'));
+    const ex4 = Array.isArray(s.paidExtras) ? s.paidExtras : [];
     A.appendChild(btn(T.saReturnNs, () => { m.close(); actionDialog({ title: fmt(T.saReturnNsTitle, { id: s.stockId }), intro: T.saReturnNsIntro, action: 'sale.returnNoScan', submit: T.saReturnNs, dflt: { refund: s.price },
-      fields: [{ k: 'noScanReason', l: T.saReturnNsMode, t: 'sel', req: true, o: () => opts('SCAN_MODE', ['NO_POWER', 'NO_OS', 'LOCKED', 'UNSUPPORTED']) }, { k: 'refund', l: T.saRefund, t: 'money', req: true, min: 0, dflt: s.price }, { k: 'refundMode', l: T.saRefundMode, t: 'sel', req: true, o: payOpts1 }, { k: 'reason', l: T.fReason, t: 'area', req: true, max: 300 }],
-      build: v => ({ saleId: s.saleId, noScanReason: v.noScanReason, refund: v.refund, refundMode: v.refundMode, reason: v.reason }), ok: r => (r.approvalId ? T.saReturnNsOk : T.saved) }); }, 'sec', { id: 'saleReturnNs' }));
+      fields: [{ k: 'noScanReason', l: T.saReturnNsMode, t: 'sel', req: true, o: () => opts('SCAN_MODE', ['NO_POWER', 'NO_OS', 'LOCKED', 'UNSUPPORTED']) }, { k: 'refund', l: T.saRefund, t: 'money', req: true, min: 0, dflt: s.price }, { k: 'refundMode', l: T.saRefundMode, t: 'sel', req: true, o: payOpts1 }].concat(ex4.length ? [{ k: 'extrasBack', l: fmt(T.saExtrasBack, { items: ex4.map(x => x.item + (Number(x.qty) > 1 ? ' x' + x.qty : '')).join(', ') }), t: 'sel', req: true, placeholder: true, wide: true, o: [{ v: 'Y', t: T.saExtrasBackY }, { v: 'N', t: T.saExtrasBackN }] }] : [], [{ k: 'reason', l: T.fReason, t: 'area', req: true, max: 300 }]),
+      build: v => Object.assign({ saleId: s.saleId, noScanReason: v.noScanReason, refund: v.refund, refundMode: v.refundMode, reason: v.reason }, ex4.length ? { extrasBack: v.extrasBack } : {}), /* R54A-04: the paid accessories of the bill - back with the laptop or kept */ ok: r => (r.approvalId ? T.saReturnNsOk : T.saved) }); }, 'sec', { id: 'saleReturnNs' }));
   }
   A.appendChild(btn(T.open + ' ' + s.stockId, () => openLaptop(s.stockId), 'sec'));
   m.body.appendChild(A);
@@ -197,22 +225,33 @@ function reserveDialog(it) {
       { k: 'expiresOn', l: T.rsExpires, t: 'date', req: true, dflt: addDays(todayISO(), 2) }], build: v => Object.assign({ id: it.id }, v), ok: r => fmt(T.rsDone, { id: r.reserveId }),
     after: (r, v) => slipDialog(T.rsReceipt, fmt(T.rsReceiptText, { id: r.reserveId, model: modelText(it), stock: it.id, customer: v.customer, mobile: v.mobile, advance: money(v.advance), till: fmtDate(v.expiresOn) }), v.mobile) });
 }
-/* R4b-04: staff refund the full advance (keeping part of it is for the manager / owner) */
-function reserveCancelDialog(reserveId, advance) { const adv = Number(advance) || 0; return actionDialog({ title: fmt(T.rsCancelTitle, { id: reserveId }), action: 'reserve.cancel', danger: true, submit: T.rsCancel, intro: adv > 0 && !isMgr() ? fmt(T.rsCancelFull, { advance: money(adv) }) : '', fields: [{ k: 'refund', l: T.rsRefund, t: 'money', req: true, min: isMgr() ? 0 : adv, dflt: adv }, { k: 'refundMode', l: T.rsRefundMode, t: 'sel', o: payOpts1, req: true, show: v => Number(v.refund) > 0 }], build: v => Object.assign({ reserveId }, v), ok: T.rsCancelled }); }
+/* R46A-01: the person who took an advance never refunds it (the server refuses it: REFUND_MODE_MANAGER) - staff see who does it instead of
+   a refund form whose Save is always refused. The manager / owner keep the form. */
+const ownAdvance = (by, advance) => !isMgrEff() && Number(advance) > 0 && isMe(by); /* RV48-06: an acting manager counts as the manager (server: isMgr_) */
+function ownAdvanceNote(title, text) { const m = openModal({ title }); m.body.appendChild(note(text, 'warn')); append(m.foot, h('div', { class: 'foot-btns' }, btn(T.close, () => m.close(), 'sec'))); return m; }
+/* R4b-04: staff refund the full advance (keeping part of it is for the manager / owner); R46A-01: a colleague's refund goes back in the
+   mode the advance came in (another mode is the manager's) */
+function reserveCancelDialog(reserveId, advance, by, advanceMode) { const adv = Number(advance) || 0;
+  if (ownAdvance(by, adv)) return ownAdvanceNote(fmt(T.rsCancelTitle, { id: reserveId }), fmt(T.rsOwnAdvance, { advance: money(adv) }));
+  return actionDialog({ title: fmt(T.rsCancelTitle, { id: reserveId }), action: 'reserve.cancel', danger: true, submit: T.rsCancel, intro: adv > 0 && !isMgrEff() ? fmt(T.rsCancelFull, { advance: money(adv) }) : '', fields: [{ k: 'refund', l: T.rsRefund, t: 'money', req: true, min: isMgrEff() ? 0 : adv, dflt: adv }, { k: 'refundMode', l: T.rsRefundMode, t: 'sel', o: payOpts1, req: true, dflt: !isMgrEff() && advanceMode ? advanceMode : undefined, /* RV48-06 */ show: v => Number(v.refund) > 0 }], build: v => Object.assign({ reserveId }, v), ok: T.rsCancelled }); }
 function saleRequestDialog(it) { return actionDialog({ title: fmt(T.rqTitle, { id: it.id }), intro: T.rqIntro, action: 'sale.request', submit: T.bSaleRequest, fields: [{ k: 'customer', l: T.fCustomer, req: true, max: 60 }, { k: 'mobile', l: T.fMobile, t: 'mobile', req: true }, { k: 'price', l: T.rqPrice, t: 'money', req: true, min: 500 }, { k: 'note', l: T.fNote, t: 'area', max: 300 }], build: v => Object.assign({ id: it.id }, v), ok: T.rqDone }); }
 /* R4life-04: the advance of an expired / dropped reservation: refunded (amount + mode) or kept (manager) */
-function advanceSettleDialog(r) { return actionDialog({ title: fmt(T.rsSettleTitle, { id: r.reserveId }), intro: fmt(T.rsSettleIntro, { advance: money(r.advance), customer: r.customer }), action: 'reserve.cancel',
-  fields: [isMgr() ? { k: 'forfeit', l: T.rsForfeit, t: 'check' } : null, { k: 'refund', l: T.rsRefund, t: 'money', req: true, min: 0, dflt: r.advance, show: v => v.forfeit !== 'Y' }, { k: 'refundMode', l: T.rsRefundMode, t: 'sel', o: payOpts1, req: true, show: v => v.forfeit !== 'Y' && Number(v.refund) > 0 }].filter(Boolean),
+function advanceSettleDialog(r) { if (ownAdvance(r.byId || r.by, r.advance)) return ownAdvanceNote(fmt(T.rsSettleTitle, { id: r.reserveId }), fmt(T.rsOwnAdvanceSettle, { advance: money(r.advance) })); /* R46A-01 */
+  return actionDialog({ title: fmt(T.rsSettleTitle, { id: r.reserveId }), intro: fmt(T.rsSettleIntro, { advance: money(r.advance), customer: r.customer }), action: 'reserve.cancel',
+  fields: [isMgrEff() ? { k: 'forfeit', l: T.rsForfeit, t: 'check' } : null, /* RV48-06: the server allows an acting manager to keep it */ { k: 'refund', l: T.rsRefund, t: 'money', req: true, min: 0, dflt: r.advance, show: v => v.forfeit !== 'Y' }, { k: 'refundMode', l: T.rsRefundMode, t: 'sel', o: payOpts1, req: true, show: v => v.forfeit !== 'Y' && Number(v.refund) > 0 }].filter(Boolean),
   build: v => (v.forfeit === 'Y' ? { reserveId: r.reserveId, forfeit: 'Y' } : { reserveId: r.reserveId, refund: v.refund, refundMode: v.refundMode }), ok: T.rsSettled, after: () => S.refresh && S.refresh() }); }
+/* R46A-02: what "Sell" on a reservation row carries into the Sell screen (read once there) */
+function sellFrom(r) { const req = (r.kind || '') === 'SALE_REQUEST' || r.kind === 'REQUEST', mob = validMobile(normMobile(r.mobile || '')) ? normMobile(r.mobile) : '';
+  S.sellPre = { stockId: r.stockId, customer: r.customer || '', mobile: mob, price: req && Number(r.price) > 0 ? Number(r.price) : 0, byId: req ? r.byId || '' : '' }; }
 VIEWS.reservations = {
   title: T.rsList, perm: () => has('reserve') || has('sale.request'),
   render(root) {
     viewHead(root, T.rsList);
     const lv = listView(root, { action: 'reserve.list', name: 'Reservations', title: T.rsList, empty: T.rsEmpty, search: false, onRow: r => openLaptop(r.stockId),
       filters: [{ k: 'open', l: T.poShow, t: 'sel', req: true, o: [{ v: 'Y', t: T.ouOpen }, { v: 'N', t: T.ouAll }], dflt: 'Y' }],
-      onAct: (a, r) => { if (a === 'cancel') reserveCancelDialog(r.reserveId, r.advance); else if (a === 'settle') advanceSettleDialog(r); else if (a === 'sell') go('sell', r.stockId); },
+      onAct: (a, r) => { if (a === 'cancel') reserveCancelDialog(r.reserveId, r.advance, r.byId || r.by, r.advanceMode); else if (a === 'settle') advanceSettleDialog(r); else if (a === 'sell') { sellFrom(r); go('sell', r.stockId); } },
       cols: [{ k: 'reserveId', l: T.rsId, main: true }, { k: 'kind', l: T.rsKind, v: r => lbl('RESERVE_KIND', r.kind || 'RESERVATION') }, { k: 'stockId', l: T.fId, main: true }, { k: 'model', l: T.fModel }, { k: 'customer', l: T.fCustomer }, { k: 'mobile', l: T.fMobile },
-        { k: 'advance', l: T.rsAdvance, num: true, fmt: v => (v ? money(v) : ''), csv: r => r.advance }, { k: 'expiresAt', l: T.rsExpires, v: r => r.expiresAt || r.expiresOn || '', fmt: v => (v ? fmtDate(v) : '') }, { k: 'by', l: T.cBy, v: r => userName(r.by) }, { k: 'status', l: T.fStatus, v: r => lbl('RESERVE_STATUS', r.status), el: r => pill('RESERVE_STATUS', r.status, r.status === 'OPEN' ? 'warn' : 'plain') },
+        { k: 'advance', l: T.rsAdvance, num: true, fmt: v => (v ? money(v) : ''), csv: r => r.advance }, { k: 'price', l: T.rqPrice, num: true, fmt: v => (Number(v) > 0 ? money(v) : ''), csv: r => r.price } /* R46A-02 */, { k: 'expiresAt', l: T.rsExpires, v: r => r.expiresAt || r.expiresOn || '', fmt: v => (v ? fmtDate(v) : '') }, { k: 'by', l: T.cBy, v: r => userName(r.by) }, { k: 'status', l: T.fStatus, v: r => lbl('RESERVE_STATUS', r.status), el: r => pill('RESERVE_STATUS', r.status, r.status === 'OPEN' ? 'warn' : 'plain') },
         { k: 'act', l: '', act: true, el: r => (r.status === 'OPEN' ? [has('reserve') || isMe(r.by) ? btn(T.rsCancel, null, 'sec sm', { 'data-act': 'cancel' }) : null, has('sale.create') ? btn(T.rsSell, null, 'sm', { 'data-act': 'sell' }) : null] : (r.advanceOpen === 'Y' && (has('reserve') || isMe(r.by)) ? btn(T.rsSettle, null, 'sec sm', { 'data-act': 'settle' }) : null)) }] });
     S.refresh = lv.reload;
   }
