@@ -23,7 +23,7 @@ Object.assign(T, {
   pcTitle: 'Parcel log', pcIntro: 'Log a parcel that arrived but has not been opened yet.', pcBoxes: 'Number of boxes', pcAwb: 'Courier / AWB number', pcCond: 'Condition of the parcel', pcDealerName: 'Sender name (when not in the list)', pcSave: 'Log parcel', pcSaved: 'Parcel logged.',
   pcList: 'Parcels', pcClose: 'Close', pcCloseTitle: 'Close parcel {id}', pcEmpty: 'No parcels logged.', pcBy: 'Logged by', tParcel: 'Parcel log',
   ouTitle: 'Outside', ouOpen: 'Open', ouAll: 'All', ouItem: 'Item', ouReason: 'Reason', ouPartner: 'Sent to', ouWork: 'Work', ouTracking: 'Courier / tracking', ouSentBy: 'Sent by', ouSentAt: 'Sent on', ouDue: 'Due back', ouLate: 'Late', ouOnTime: 'On time',
-  ouReturned: 'Returned', ouOutcome: 'Outcome', ouEmpty: 'Nothing is outside at the moment.', ouSend: 'Send outside (no scan)', ouReturn: 'Record return (no scan)', ouClose: 'Close dealer return', ouSettle: 'Dealer returns to settle',
+  ouReturned: 'Returned', ouOutcome: 'Outcome', ouEmpty: 'Nothing is outside at the moment.', ouSend: 'Send outside (no scan)', ouReturn: 'Record return (no scan)', ouClose: 'Close dealer return', ouNewDue: 'New due date', ouNewDueTitle: 'New due date — {id}', ouNewDueIntro: 'For a standby laptop that stays with the customer while a long repair is still on time. The owner is told about the new date.', ouNewDueDate: 'New due date', ouNewDueReason: 'Why the standby laptop stays longer', ouNewDueDone: 'Due date changed.', ouSettle: 'Dealer returns to settle',
   ouSendTitle: 'Send outside without scan', ouSendIntro: 'Only for a laptop that cannot be scanned, or a customer job that does not start. Everything else is sent out with the pendrive.', ouItemCode: 'Stock ID or job number (GJ / RJ)',
   ouPartnerOther: 'Partner name (when not in the list)', ouStaff: 'Staff member', ouJob: 'Job number (RJ)', ouWorkReq: 'Work to be done', ouTrackHint: 'Required for dealer returns.', ouReceipt: 'Receipt photo (optional)',
   ouReturnTitle: 'Return from outside — {id}', ouWorkDone: 'Work done', ouPaid: 'Vendor\'s total charge for this work (an advance already entered in the cash book is not counted twice)', ouReturnDone: 'Returned. Please check it in Repair.', ouPaidHow: 'Paid how', ouPaidCash: 'Cash from the shop drawer', ouPaidNot: 'Not paid yet', ouCloseTitle: 'Close dealer return — {id}', ouCost: 'Cost of outside work', ouCredit: 'Credit note no.',
@@ -91,7 +91,7 @@ function openPo(poNo) {
     { onAct: async (act, l, b) => {
       if (act === 'edit') actionDialog({ title: T.lnEdit + ' ' + l.line, wide: true, action: 'po.lineSave', fields: lineFields(), init: lineInit(l), build: v => ({ poNo, line: l.line, fields: lineData(v) }) });
       else if (act === 'del') { if (await confirmBox(fmt(T.lnDeleteAsk, { n: l.line }), { danger: true, yes: T.lnDelete })) runAction(b, 'po.lineDelete', { poNo, line: l.line }); }
-      else if (act === 'lot') lotRatesDialog(poNo, l, laptops.filter(x => x.line === l.line));
+      else if (act === 'lot') lotRatesDialog(poNo, l, laptops.filter(x => x.line === l.line && x.state !== 'VOID' && x.source !== 'BUYBACK' && x.source !== 'EXCHANGE')); /* RV70-02: cancelled entries and bought-back laptops take no part of the lot */
     } }));
     box.appendChild(h('div', { class: 'sect' }, h('h3', { text: T.shTitle }), closed ? null : btn(T.shAdd, () => shipmentDialog(poNo, null), 'sec sm')));
     box.appendChild(simpleTable([{ k: 'shipmentId', l: T.shId, main: true }, { k: 'billNo', l: T.fBillNo }, { k: 'billDate', l: T.fBillDate, fmt: v => (v ? fmtDate(v) : '') }, { k: 'warrantyDays', l: T.fWarrantyDays, fmt: v => (v ? lbl('WARRANTY_DAYS', v) : '') },
@@ -318,11 +318,12 @@ VIEWS.outside = {
     const lv = listView(root, { action: 'outside.list', name: 'Outside', title: T.ouTitle, empty: T.ouEmpty, search: false,
       filters: [{ k: 'open', l: T.poShow, t: 'sel', req: true, o: [{ v: 'Y', t: T.ouOpen }, { v: 'N', t: T.ouAll }], dflt: 'Y' }],
       onRow: r => (/^RJ/.test(r.itemId) ? (has('job.view') || has('job.status') ? openJob(r.itemId) : null) : openLaptop(r.itemId)),
-      onAct: (a, r) => { if (a === 'ret') outsideReturnDialog(r); else if (a === 'close') outsideCloseDialog(r); },
+      onAct: (a, r) => { if (a === 'ret') outsideReturnDialog(r); else if (a === 'close') outsideCloseDialog(r); else if (a === 'due') outsideDueDialog(r); },
       cols: [{ k: 'itemId', l: T.ouItem, main: true }, { k: 'reason', l: T.ouReason, v: r => lbl('OUT_REASON', r.reason) }, { k: 'partner', l: T.ouPartner, main: true }, { k: 'work', l: T.ouWork }, { k: 'tracking', l: T.ouTracking }, { k: 'sentBy', l: T.ouSentBy, v: r => userName(r.sentBy) },
         { k: 'sentAt', l: T.ouSentAt, fmt: fmtDT }, { k: 'dueAt', l: T.ouDue, fmt: fmtDT }, { k: 'late', l: T.ouLate, v: r => (isLate(r) ? T.ouLate : T.ouOnTime), el: r => h('span', { class: 'pill ' + (isLate(r) ? 'bad' : 'good'), text: isLate(r) ? T.ouLate : T.ouOnTime }) },
         { k: 'returned', l: T.ouReturned, v: r => (isReturned(r) ? T.yes : T.no) }, { k: 'outcome', l: T.ouOutcome, v: r => lbl('MOVE_OUTCOME', r.outcome) },
-        { k: 'act', l: '', act: true, el: r => [canReturn && !isReturned(r) && !r.outcome && (/^RJ-/.test(r.itemId) || (r.scanMode && r.scanMode !== 'PENDRIVE')) ? btn(T.ouReturn, null, 'sec sm', { 'data-act': 'ret' }) : null, has('outside.close') && DEALER_OUT.indexOf(r.reason) >= 0 && !r.outcome ? btn(T.ouClose, null, 'sec sm', { 'data-act': 'close' }) : null] }] });
+        { k: 'act', l: '', act: true, el: r => [canReturn && !isReturned(r) && !r.outcome && (/^RJ-/.test(r.itemId) || (r.scanMode && r.scanMode !== 'PENDRIVE')) ? btn(T.ouReturn, null, 'sec sm', { 'data-act': 'ret' }) : null, has('outside.close') && DEALER_OUT.indexOf(r.reason) >= 0 && !r.outcome ? btn(T.ouClose, null, 'sec sm', { 'data-act': 'close' }) : null,
+          has('outside.close') && r.reason === 'STANDBY_CUSTOMER' && !isReturned(r) && !r.outcome ? btn(T.ouNewDue, null, 'sec sm', { 'data-act': 'due' }) : null] }] });
     S.refresh = lv.reload;
   }
 };
@@ -349,6 +350,11 @@ function outsideReturnDialog(mv) {
   return actionDialog({ title: fmt(T.ouReturnTitle, { id: mv.itemId }), action: 'outside.returnNoScan',
     fields: [{ k: 'workDone', l: T.ouWorkDone, t: 'area', max: 200 }, { k: 'amountPaid', l: T.ouPaid, t: 'money' }, { k: 'paidMode', l: T.ouPaidHow, t: 'sel', req: true, placeholder: true, o: paidModeOpts, show: v => Number(v.amountPaid) > 0 }],
     build: v => { const d = Object.assign({ moveId: mv.moveId }, v); if (!(Number(d.amountPaid) > 0)) delete d.paidMode; return d; }, ok: T.ouReturnDone });
+}
+/* round 65 (RV64-06): a new due date for a standby laptop (manager / owner; the owner gets a line) */
+function outsideDueDialog(mv) {
+  return actionDialog({ title: fmt(T.ouNewDueTitle, { id: mv.itemId }), intro: T.ouNewDueIntro, action: 'outside.setDue',
+    fields: [{ k: 'dueDate', l: T.ouNewDueDate, t: 'date', req: true }, { k: 'reason', l: T.ouNewDueReason, t: 'area', req: true, max: 200 }], build: v => ({ moveId: mv.moveId, dueDate: v.dueDate, reason: v.reason }), ok: T.ouNewDueDone });
 }
 function outsideCloseDialog(mv) {
   return actionDialog({ title: fmt(T.ouCloseTitle, { id: mv.itemId }), action: 'outside.close', submit: T.ouClose,

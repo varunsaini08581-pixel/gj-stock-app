@@ -9,7 +9,7 @@ Object.assign(T, {
   jbUpdate: 'Update job', jbNewStatus: 'Status', jbNote: 'Note', jbAmountReason: 'Reason for changing the amount', jbZeroReason: 'Reason for zero amount', jbUpdated: 'Job updated.', jbNothing: 'Nothing was changed.',
   jbParts: 'Parts fitted', jbFit: 'Fit part', jbPull: 'Pull part', jbLines: 'Other charges and customer\'s own parts', jbLineAdd: 'Add charge / part', jbLineKind: 'Kind', jbLineText: 'Description', jbLineAmount: 'Amount charged', jbLineCost: 'Cost to shop', jbLinesNone: 'No other charges.',
   jbOutside: 'Outside', jbOutNow: 'Outside now: {reason} — {partner}. Due back {due}.', jbOutSend: 'Send outside (no scan)', jbOutBack: 'Record return from outside', jbOutHint: 'A job that starts normally is sent outside with the pendrive.',
-  jbSlips: 'Customer slips', jbSlipIntake: 'Intake slip', jbSlipReady: '"Ready for pickup" message', jbSlipMark: 'Mark slip as sent', jbSlipMarked: 'Slip marked as sent.', jbPin: 'Pickup PIN: {pin}',
+  jbSlips: 'Customer slips', jbSlipIntake: 'Intake slip', jbSlipReady: '"Ready for pickup" message', jbSlipMark: 'Mark slip as sent', jbSlipMarked: 'Slip marked as sent.', jbSlipMarkedAuto: 'Slip marked as sent.', jbPin: 'Pickup PIN: {pin}',
   jbDeliver: 'Deliver to customer', jbBill: 'Bill no. (required for every delivery)', jbCustPin: 'Customer\'s pickup PIN (4 digits)', jbNoPin: 'No PIN — deliver with ID proof (manager / owner only)', jbIdType: 'ID type', jbIdLast4: 'Last 4 digits of the ID',
   jbCollector: 'Collected by (name)', jbCollectorMobile: 'Collector\'s mobile', jbItemsReturned: 'All items received with the laptop were returned', jbOldParts: 'Old parts returned to the customer', jbNoScanReason: 'Reason for delivering without a delivery scan (manager / owner)',
   jbNoPinIntro: 'Only when the customer has lost the phone or forgotten the PIN. Check their ID before handing over.', jbDelivered: 'Laptop delivered to the customer.', jbDeliverBtn: 'Deliver',
@@ -87,6 +87,12 @@ function drawJob(box, j, m) {
       const sm = slipDialog(kind === 'INTAKE' ? T.jbSlipIntake : T.jbSlipReady, r.text || '', j.mobile && !/\*/.test(j.mobile) ? j.mobile : '', [r.pin ? h('p', { class: 'slip-pin', text: fmt(T.jbPin, { pin: r.pin }) }) : null]);
       if (r.waLink && /^https:\/\/wa\.me\//.test(r.waLink)) { const a = $('#waLink', sm.el); if (a) a.href = r.waLink; else $('.foot-btns', sm.el).prepend(h('a', { class: 'btn good', id: 'waLink', target: '_blank', rel: 'noopener noreferrer', href: r.waLink, text: T.seWhatsApp })); }
       $('.foot-btns', sm.el).prepend(btn(T.jbSlipMark, async e => { const x = await runAction(e.currentTarget, 'job.slipSent', { id: j.id }, { ok: T.jbSlipMarked }); if (x.ok) sm.close(); }, ''));
+      /* round 65 (RV64-05): sending the intake slip with WhatsApp or Print marks it as sent (the server records how) */
+      if (kind === 'INTAKE' && !yes(j.slipSent)) {
+        let marked = false; const mark = via => { if (marked) return; marked = true; api('job.slipSent', { id: j.id, via }).then(x => { if (x && x.ok) { j.slipSent = 'Y'; notify(T.jbSlipMarkedAuto, 'ok'); } else marked = false; }); };
+        const wa = $('#waLink', sm.el); if (wa) wa.addEventListener('click', () => mark('WHATSAPP'));
+        Array.from(sm.el.querySelectorAll('.foot-btns button')).filter(b => b.textContent === T.print).forEach(b => b.addEventListener('click', () => mark('PRINT')));
+      }
     };
     box.appendChild(h('div', { class: 'card' }, h('h3', { text: T.jbSlips }), h('p', { class: 'hint', text: yes(j.slipSent) ? T.jbSlipSent : '' }), h('div', { class: 'btns' }, btn(T.jbSlipIntake, e => slip(e.currentTarget, 'INTAKE'), 'sec', { id: 'slipIntake' }), j.status === 'READY' ? btn(T.jbSlipReady, e => slip(e.currentTarget, 'READY'), 'sec', { id: 'slipReady' }) : null)));
   } else if (full && open && !yes(j.slipSent)) box.appendChild(note(T.jbSlipNotSent, 'warn'));
