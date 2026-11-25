@@ -32,6 +32,7 @@ Object.assign(T, {
   cpuHint: 'Example: Intel Core i5-8350U (8th Gen). Type "Not known" when it cannot be read.',
   slTitle: 'Stock list', slSearch: 'Search ID, serial, brand, model…', slStateDefault: 'In stock and waiting', slFlag: 'Flag', slPrint8: 'Print stock sheet (8 columns)', slEmpty: 'No laptops match.',
   buTitle: 'Complete stock records', buProgress: '{n} of {N} complete', buIntro: 'Fill in the missing dealer, arrival date, purchase rate, warranty and charger of migrated laptops. Existing values are not overwritten unless you tick "Replace existing values".',
+  bmTab: 'Move to a section', bmIntro: 'Tick the laptops and choose where they now stand. Only laptops in the shop with status Ready, Under check or Needs repair can be moved.', bmFrom: 'Laptops now in', bmTo: 'Move them to', bmStatus: 'Set status to', bmKeep: 'Keep their status', bmAll: 'Tick all', bmSave: 'Move {n} laptop(s)', bmNone: 'Tick at least one laptop.', bmDone: '{ok} moved, {bad} not moved', bmEmpty: 'No laptop here can be moved.',
   buSaveRows: 'Save changed rows', buPaste: 'Paste from Excel', buPasteHint: 'Copy the rows from Excel including the header row: Stock ID, Dealer, Arrival date, Bill no., Bill date, Warranty days, Purchase rate, Charger, Note.',
   buCheck: 'Check pasted rows', buSaveValid: 'Save {n} valid rows', buReplace: 'Replace existing values', buRowOk: 'OK', buRowErr: 'Error', buSavedN: '{ok} rows saved, {bad} rows with errors.', buNoChange: 'No rows were changed.',
   buMissing: 'Missing', buAllDone: 'All stock records are complete.', buBadHeader: 'The first row must be the header row copied from the template.', buResult: 'Result',
@@ -327,7 +328,40 @@ VIEWS.bulk = {
       append(pane, [h('p', { class: 'hint', text: T.buPasteHint }), ta, h('div', { class: 'btns' }, check), out]);
     };
     const mk = (text, fn, on) => h('button', { type: 'button', class: 'tab', role: 'tab', 'aria-selected': on ? 'true' : 'false', text, onclick: e => { $$('.tab', tabs).forEach(t => t.setAttribute('aria-selected', 'false')); e.currentTarget.setAttribute('aria-selected', 'true'); fn(); } });
-    append(tabs, [mk(T.buTitle, tabInline, true), mk(T.buPaste, tabPaste, false)]);
+    /* owner 25 Nov: many laptops to another section / status at once (stock.bulkMove) */
+    const tabMove = () => {
+      clear(pane); clear(prog);
+      const f = mkForm([{ k: 'from', l: T.bmFrom, t: 'sel', o: [{ v: 'REPAIR', t: lbl('LOCATION', 'REPAIR') }, { v: 'SALES', t: lbl('LOCATION', 'SALES') }] },
+        { k: 'to', l: T.bmTo, t: 'sel', o: [{ v: 'SALES', t: lbl('LOCATION', 'SALES') }, { v: 'REPAIR', t: lbl('LOCATION', 'REPAIR') }] },
+        { k: 'status', l: T.bmStatus, t: 'sel', o: [{ v: 'READY', t: lbl('STATUS', 'READY') }, { v: '', t: T.bmKeep }, { v: 'UNDER_CHECK', t: lbl('STATUS', 'UNDER_CHECK') }, { v: 'NEEDS_REPAIR', t: lbl('STATUS', 'NEEDS_REPAIR') }] }], { from: 'REPAIR', to: 'SALES', status: 'READY' }, { onChange: F => { if (F.val('from') !== lastFrom) { lastFrom = F.val('from'); fill(); } } });
+      let lastFrom = 'REPAIR';
+      const list = h('div', { id: 'bmList' }), out = h('div', { id: 'bmOut' }), picked = new Set();
+      const saveB = btn(fmt(T.bmSave, { n: 0 }), async () => {
+        if (!picked.size) { notify(T.bmNone, 'warn'); return; }
+        saveB.disabled = true; const ids = [...picked], res = []; let ok = 0, bad = 0;
+        for (let i = 0; i < ids.length; i += 100) {
+          const r = await api('stock.bulkMove', { ids: ids.slice(i, i + 100), to: f.val('to'), status: f.val('status') });
+          if (!r.ok) { notify(r.msg, 'bad'); saveB.disabled = false; return; }
+          (r.results || []).forEach(x => { res.push(x); if (x.ok) ok++; else bad++; });
+        }
+        saveB.disabled = false; notify(fmt(T.bmDone, { ok, bad }), bad ? 'warn' : 'ok');
+        clear(out); const bads = res.filter(x => !x.ok); if (bads.length) out.appendChild(simpleTable([{ k: 'id', l: T.fId, main: true }, { k: 'msg', l: T.buResult }], bads));
+        fill();
+      }, '', { id: 'bmSave' });
+      const count = () => { saveB.textContent = fmt(T.bmSave, { n: picked.size }); };
+      async function fill() {
+        clear(list); picked.clear(); count();
+        const r = await api('stock.list', { location: f.val('from'), limit: 500 }); if (!r.ok) { list.appendChild(h('p', { class: 'bad', text: r.msg })); return; }
+        const rows = (r.rows || []).filter(x => ['READY', 'UNDER_CHECK', 'NEEDS_REPAIR'].indexOf(x.status) >= 0 && !x.transit);
+        if (!rows.length) { list.appendChild(h('p', { class: 'muted', text: T.bmEmpty })); return; }
+        const boxes = rows.map(x => { const cb = h('input', { type: 'checkbox', 'aria-label': x.id, onchange: e => { if (e.target.checked) picked.add(x.id); else picked.delete(x.id); count(); } });
+          return { cb, el: h('label', { class: 'chk' }, cb, h('span', { text: ' ' + x.id + ' - ' + [x.brand, x.model].filter(Boolean).join(' ') + ' (' + lbl('STATUS', x.status) + ')' })) }; });
+        const all = h('label', { class: 'chk' }, h('input', { type: 'checkbox', id: 'bmAll', onchange: e => { boxes.forEach(b => { b.cb.checked = e.target.checked; if (e.target.checked) picked.add(b.cb.getAttribute('aria-label')); else picked.delete(b.cb.getAttribute('aria-label')); }); count(); } }), h('b', { text: ' ' + T.bmAll }));
+        append(list, [all].concat(boxes.map(b => h('div', null, b.el))));
+      }
+      append(pane, [h('p', { class: 'hint', text: T.bmIntro }), f.el, list, h('div', { class: 'btns' }, saveB), out]); fill();
+    };
+    append(tabs, [mk(T.buTitle, tabInline, true), mk(T.buPaste, tabPaste, false), mk(T.bmTab, tabMove, false)]);
     tabInline();
   }
 };
