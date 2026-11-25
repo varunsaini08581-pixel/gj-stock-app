@@ -210,7 +210,7 @@ function oldNoScanDialog(sticker) {
     { k: 'dealerId', l: T.fDealer, t: 'sel', req: true, o: () => dealerOpts([{ v: 'D-000', t: T.unknownDealer }]).filter((x, i, a) => a.findIndex(y => y.v === x.v) === i) }, { k: 'arrivedOn', l: T.fArrived, t: 'date', req: true, maxToday: true }, { k: 'billNo', l: T.fBillNo, max: 40 }, { k: 'billDate', l: T.fBillDate, t: 'date', maxToday: true },
     { k: 'warrantyDays', l: T.fWarrantyDays, t: 'sel', o: warrantyOpts }, has('stock.rate') ? { k: 'rate', l: T.fRate, t: 'money', min: 1 } : null,
     { k: 'status', l: T.fStatus, t: 'sel', req: true, o: opts('STATUS', ['READY', 'UNDER_CHECK', 'NEEDS_REPAIR']) }, { k: 'location', l: T.onLocation, t: 'sel', req: true, o: opts('SECTION', ['SALES', 'REPAIR']), dflt: S.me.section || '' },
-    { k: 'charger', l: T.fCharger, t: 'sel', req: true, o: opts('CHARGER', ['ORIGINAL', 'COMPATIBLE', 'NONE']) }, { k: 'note', l: T.fNote, t: 'area', max: 300 }]);
+    /* owner 26 Nov: no charger question - chargers are loose stock */ { k: 'note', l: T.fNote, t: 'area', max: 300 }]);
   return actionDialog({ title: T.onTitle, intro: T.onIntro, wide: true, action: 'stock.oldNoScan', fields, build: v => { const d = stripSpec(v); if (d.warrantyDays != null && d.warrantyDays !== '') d.warrantyDays = Number(d.warrantyDays); else delete d.warrantyDays; return d; } });   /* blank = not known */
 }
 

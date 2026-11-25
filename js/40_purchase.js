@@ -244,7 +244,7 @@ VIEWS.receive = {
           [{ k: 'serial', l: T.fSerial, t: 'code', max: 40, noSticker: true }, { k: 'reason', l: T.unsMode, t: 'sel', req: true, o: opts('SCAN_MODE', ['NO_POWER', 'NO_OS', 'LOCKED', 'UNSUPPORTED']) },
             { k: 'lockCode', l: T.unsLock, t: 'sel', req: true, o: opts('UNFIT', ['LOCK_BIOS', 'LOCK_DISK', 'LOCK_ACTIVATION', 'LOCK_MDM', 'LOCK_BITLOCKER']), show: v => v.reason === 'LOCKED' },
             { k: 'condition', l: T.rcCondition, t: 'sel', req: true, o: opts('CONDITION') }, { k: 'faultReason', l: T.rcFaultReason, t: 'sel', req: true, o: opts('FAULT'), show: v => v.condition === 'FAULTY' }, { k: 'faultText', l: T.rcFaultText, req: true, max: 200, show: v => v.condition === 'FAULTY' },
-            { k: 'charger', l: T.fCharger, t: 'sel', req: true, o: opts('CHARGER', ['ORIGINAL', 'COMPATIBLE', 'NONE']) }], ckCodes.map(c => ({ k: 'ck_' + c, l: lbl('CHECK', c), t: 'sel', req: true, o: opts('CHECK_RESULT', ['OK', 'FAIL', 'NOT_CHECKED']), dflt: 'NOT_CHECKED' })),
+            /* owner 26 Nov: no charger question */], ckCodes.map(c => ({ k: 'ck_' + c, l: lbl('CHECK', c), t: 'sel', req: true, o: opts('CHECK_RESULT', ['OK', 'FAIL', 'NOT_CHECKED']), dflt: 'NOT_CHECKED' })),
           [{ k: 'note', l: T.fNote, t: 'area', max: 300 }]), { sticker: preSticker }, async v => {
           const d = Object.assign(stripSpec(v), srcData(v)); delete d.source; d.checklist = {}; ckCodes.forEach(c => { d.checklist[c] = v['ck_' + c]; delete d['ck_' + c]; });
           const r = await callConfirmed('receive.laptopNoScan', d);
