@@ -251,7 +251,7 @@ VIEWS.dash = {
   render(root) {
     viewHead(root, T.dsTitle, [btn(T.tReports, () => go('reports'), 'sec'), btn(T.tAlerts, () => go('alerts'), 'sec')]);
     S.refresh = load(root, 'dash.summary', {}, (r, box) => {
-      const t = r.tiles || {}, keys = [['sales', T.dsSales], ['repair', T.dsRepair], ['inTransit', T.dsTransit], ['outside', T.dsOutside], ['pending', T.dsPending], ['rejected', T.dsDealerReturn], ['awaitingPickup', T.dsPickup]];
+      const t = r.tiles || {}, keys = [['sales', T.dsSales], ['repair', T.dsRepair], ['home', "At the owner's home"], ['inTransit', T.dsTransit], ['outside', T.dsOutside], ['pending', T.dsPending], ['rejected', T.dsDealerReturn], ['awaitingPickup', T.dsPickup]];
       const st = h('div', { class: 'stat', id: 'dashTiles' }); let sum = 0;
       keys.forEach(k => { const n = Number(t[k[0]]) || 0; sum += n; st.appendChild(h('div', null, h('b', { text: String(n) }), h('span', { text: k[1] }))); });
       append(box, [st, h('p', { class: 'dash-expected', id: 'dashExpected' }, h('b', { text: fmt(T.dsExpected, { n: r.expected != null ? r.expected : (t.total != null ? t.total : sum) }) }))]);

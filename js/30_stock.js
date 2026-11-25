@@ -150,8 +150,8 @@ function statusTargets(it) {
   if (s === 'READY' || s === 'SHOP_USE') t.push('NEEDS_REPAIR'); /* round 1 B5 (R1B-15): a reserved laptop - cancel the reservation first */
   if (s === 'DEALER_RETURN' && isMgr()) t.push('UNDER_CHECK'); /* round 1 B5 (R1B-05): undo a mistaken return to dealer (checked again before Ready) */
   if (s !== 'DEALER_RETURN' && s !== 'RESERVED' && (isMgr() || rep) && (it.source === 'PURCHASE' || it.source === 'REPLACEMENT')) t.push('DEALER_RETURN');
-  if (isMgr() && s === 'READY') t.push('SHOP_USE');
-  if (isMgr() && s === 'SHOP_USE') t.push('READY');
+  if (isAdmin() && s === 'READY') t.push('SHOP_USE'); /* owner 26 Nov: shop use is the owner's alone */
+  if (isAdmin() && s === 'SHOP_USE') t.push('READY');
   if (isMgr() && s !== 'MISSING') t.push('MISSING');
   return t;
 }
@@ -163,8 +163,8 @@ function statusDialog(it) {
   const hand = note(T.stHandover, 'warn'); hand.hidden = true;
   const m = actionDialog({ title: fmt(T.stTitle, { id: it.id }), action: 'stock.setStatus', disableUntilChanged: true,
     fields: [{ k: 'cur', l: T.fStatus, t: 'static', dflt: lbl('STATUS', it.status) }, { k: 'status', l: T.stNew, t: 'sel', req: true, placeholder: true, o: opts('STATUS', targets) },
-      { k: 'text', l: T.stText, t: 'area', max: 200, req: true, show: needText }, { k: 'userId', l: T.stUser, t: 'sel', o: () => userOpts(), req: true, show: v => v.status === 'SHOP_USE' },
-      { k: 'purpose', l: T.stPurpose, req: true, show: v => v.status === 'SHOP_USE' }, { k: 'until', l: T.stUntil, t: 'date', req: true, show: v => v.status === 'SHOP_USE' },
+      { k: 'text', l: T.stText, t: 'area', max: 200, req: true, show: needText }, { k: 'userId', l: T.stUser + ' (optional)', t: 'sel', o: () => userOpts(), show: v => v.status === 'SHOP_USE' },
+      { k: 'purpose', l: T.stPurpose, req: true, show: v => v.status === 'SHOP_USE' }, { k: 'until', l: T.stUntil + ' (optional)', t: 'date', show: v => v.status === 'SHOP_USE' },
       { k: 'pin', l: T.yourPin, t: 'pin', req: true, show: undoDr, hint: T.stUndoPin }],
     build: v => { const d = { id: it.id, status: v.status }; if (v.text) d.text = v.text; if (undoDr(v)) d.pin = v.pin; /* review F2: undoing a return to dealer is an override */ if (v.status === 'SHOP_USE') d.shopUse = { userId: v.userId, purpose: v.purpose, until: v.until }; return d; },
     ok: r => (r.approvalId ? T.sentForApproval : (r.handoverStarted === 'Y' || r.handoverStarted === true ? T.stSavedHand : T.stSaved)),
@@ -331,8 +331,8 @@ VIEWS.bulk = {
     /* owner 25 Nov: many laptops to another section / status at once (stock.bulkMove) */
     const tabMove = () => {
       clear(pane); clear(prog);
-      const f = mkForm([{ k: 'from', l: T.bmFrom, t: 'sel', o: [{ v: 'REPAIR', t: lbl('LOCATION', 'REPAIR') }, { v: 'SALES', t: lbl('LOCATION', 'SALES') }] },
-        { k: 'to', l: T.bmTo, t: 'sel', o: [{ v: 'SALES', t: lbl('LOCATION', 'SALES') }, { v: 'REPAIR', t: lbl('LOCATION', 'REPAIR') }] },
+      const f = mkForm([{ k: 'from', l: T.bmFrom, t: 'sel', o: [{ v: 'REPAIR', t: lbl('LOCATION', 'REPAIR') }, { v: 'SALES', t: lbl('LOCATION', 'SALES') }].concat(isAdmin() ? [{ v: 'HOME', t: lbl('LOCATION', 'HOME') }] : []) },
+        { k: 'to', l: T.bmTo, t: 'sel', o: [{ v: 'SALES', t: lbl('LOCATION', 'SALES') }, { v: 'REPAIR', t: lbl('LOCATION', 'REPAIR') }].concat(isAdmin() ? [{ v: 'HOME', t: lbl('LOCATION', 'HOME') }] : []) },
         { k: 'status', l: T.bmStatus, t: 'sel', o: [{ v: 'READY', t: lbl('STATUS', 'READY') }, { v: '', t: T.bmKeep }, { v: 'UNDER_CHECK', t: lbl('STATUS', 'UNDER_CHECK') }, { v: 'NEEDS_REPAIR', t: lbl('STATUS', 'NEEDS_REPAIR') }] }], { from: 'REPAIR', to: 'SALES', status: 'READY' }, { onChange: F => { if (F.val('from') !== lastFrom) { lastFrom = F.val('from'); fill(); } } });
       let lastFrom = 'REPAIR';
       const list = h('div', { id: 'bmList' }), out = h('div', { id: 'bmOut' }), picked = new Set();
