@@ -110,6 +110,10 @@ function drawLaptop(box, r, m) {
     const om = it.outside ? (it.outside.moveId || ((r.moves || []).find(x => x.kind === 'OUTSIDE' && x.moveId && !x.closedAt && !x.outcome) || {}).moveId) : '';
     if (om && (isMgr() || role() === 'REPAIR')) add(T.bOutReturn, () => outsideReturnDialog({ moveId: om, itemId: it.id }));
   }
+  /* owner 26 Nov: quick fix - a small fix by a technician without a handover */
+  const qf = r.qfix;
+  if (!qf && has('qfix.ask') && active && it.location === 'SALES' && (it.status === 'READY' || it.status === 'RESERVED') && !it.transit && mine) add(T.bQfix, () => qfixAskDialog(it));
+  if (qf) { box.insertBefore(note(qfixText(qf), 'warn'), box.children[1] || null); qfixButtons(qf).forEach(b => A.appendChild(b)); }
   if (has('reserve') && active && it.status === 'READY' && it.location === 'SALES' && !it.reserve) add(T.bReserve, () => reserveDialog(it));
   if (has('reserve') && it.reserve) add(T.bReserveCancel, () => reserveCancelDialog(it.reserve.id, it.reserve.advance, it.reserve.byId, it.reserve.advanceMode)); /* R46A-01 */
   if (has('sale.create') && active && (it.location === 'SALES' || (it.outside && it.outside.reason === 'ON_APPROVAL')) && !it.transit) add(T.bSell, () => { m.close(); if (it.reserve) sellFrom({ stockId: it.id, customer: it.reserve.customer, kind: it.reserve.kind, price: it.reserve.price, byId: it.reserve.byId }); go('sell', it.id); }, ''); /* R46A-02 */
@@ -366,3 +370,33 @@ VIEWS.bulk = {
   }
 };
 Object.assign(T, { cField: 'Field' });
+
+/* ---------- quick fix (owner 26 Nov) ---------- */
+Object.assign(C, { QF_WORK: { HINGE: 'Hinge tightening', SCREWS: 'Screws / small fitting', CLEAN: 'Cleaning', KEYBOARD: 'Keyboard key', OTHER: 'Other (describe)' },
+  QF_STATUS: { OPEN: 'Waiting for the technician', TAKEN: 'With the technician', DONE: 'Done', CANCELLED: 'Cancelled' } });
+Object.assign(T, { bQfix: 'Quick fix', qfTitle: 'Quick fix — {id}', qfIntro: 'A small fix while the customer waits (hinge, screws, cleaning, a key). The laptop stays in Sales; the technician takes it, fixes it and marks it done. It cannot be sold until the fix is done and the laptop is scanned with the pendrive. Changing a part (RAM, SSD, battery …) is not a quick fix — use Parts.',
+  qfWork: 'What needs to be done', qfNote: 'Details', qfTo: 'Technician', qfAsked: 'Quick fix asked. {name} has been told.', qfBox: 'Quick fix: {work} — asked by {by} at {at}. {state}', qfWith: 'With {name} since {at}.', qfWaiting: 'Waiting for {name}.',
+  bQfTake: 'Take it', bQfDone: 'Fix done', bQfCancel: 'Cancel quick fix', qfTaken: 'Taken. Mark it done when the fix is finished.', qfDoneTitle: 'Quick fix done — {id}', qfDoneNote: 'What was done (optional)',
+  qfDone: 'Done. The salesperson has been told — scan the laptop with the pendrive before the sale.', qfCancelTitle: 'Cancel quick fix — {id}', qfCancelled: 'Quick fix cancelled.', qfHome: 'Quick fixes', qfNone: 'No quick fixes.', qfOpen: 'Open laptop' });
+function qfixText(q) {
+  const work = lbl('QF_WORK', q.work) + (q.note ? ' (' + q.note + ')' : '');
+  const state = q.status === 'TAKEN' ? fmt(T.qfWith, { name: q.takenByName, at: fmtDT(q.takenAt) }) : q.status === 'OPEN' ? fmt(T.qfWaiting, { name: q.assignedName }) : lbl('QF_STATUS', q.status);
+  return fmt(T.qfBox, { work, by: q.askedByName, at: fmtDT(q.askedAt), state });
+}
+function qfixButtons(q) {
+  const out = [], me = S.me && S.me.userId, live = q.status === 'OPEN' || q.status === 'TAKEN';
+  if (!live) return out;
+  if (has('qfix.do') && q.status === 'OPEN') out.push(btn(T.bQfTake, e => runAction(e.currentTarget, 'qfix.take', { fixId: q.fixId }, { ok: T.qfTaken }), ''));
+  if (has('qfix.do') && (q.status === 'OPEN' || q.takenBy === me || isMgr())) out.push(btn(T.bQfDone, () => actionDialog({ title: fmt(T.qfDoneTitle, { id: q.stockId }), action: 'qfix.done', submit: T.bQfDone,
+    fields: [{ k: 'note', l: T.qfDoneNote, t: 'area', max: 200, wide: true }], build: v => ({ fixId: q.fixId, note: v.note }), ok: T.qfDone }), q.status === 'TAKEN' ? '' : 'sec'));
+  if (has('qfix.ask') && (q.askedBy === me || isMgr())) out.push(btn(T.bQfCancel, () => actionDialog({ title: fmt(T.qfCancelTitle, { id: q.stockId }), action: 'qfix.cancel', submit: T.bQfCancel,
+    fields: [{ k: 'reason', l: T.fReason, max: 200, wide: true }], build: v => ({ fixId: q.fixId, reason: v.reason }), ok: T.qfCancelled }), 'sec'));
+  return out;
+}
+function qfixAskDialog(it) {
+  const techs = (L().technicians || []).map(u => ({ v: u.userId, t: u.name }));
+  return actionDialog({ title: fmt(T.qfTitle, { id: it.id }), intro: T.qfIntro, action: 'qfix.ask', submit: T.bQfix,
+    fields: [{ k: 'work', l: T.qfWork, t: 'sel', req: true, o: opts('QF_WORK') }, { k: 'note', l: T.qfNote, max: 200, wide: true },
+      { k: 'to', l: T.qfTo, t: 'sel', req: true, o: techs }],
+    build: v => ({ id: it.id, work: v.work, note: v.note, to: v.to }), ok: r => fmt(T.qfAsked, { name: (r.fix && r.fix.assignedName) || '' }) });
+}

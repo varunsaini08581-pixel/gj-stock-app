@@ -120,6 +120,7 @@ input.code{font-weight:700;letter-spacing:.5px;text-transform:uppercase}
 .fld label.tick,.filters .fld label.tick{display:flex;font-size:15px;font-weight:500;color:var(--text);margin:0}
 .chk{display:flex;align-items:center;gap:8px;min-height:40px;cursor:pointer}
 .chk input{width:20px;height:20px;flex:0 0 20px;margin:0;accent-color:var(--blue)}
+.qfix-row{border-top:1px solid var(--line);padding:10px 0}.qfix-row:first-of-type{border-top:0}.qfix-row p{margin:0}.qfix-row .btns{margin-top:8px}
 .scanbox input::placeholder{font-size:15px;font-weight:500;letter-spacing:0;text-transform:none}
 .multi{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:0 12px}
 .codebox{display:flex;gap:8px}.codebox input{flex:1 1 auto;min-width:0}

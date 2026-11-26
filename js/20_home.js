@@ -55,6 +55,13 @@ VIEWS.home = {
       if (items.length) { const ul = h('ul', { class: 'todo' }); items.forEach(t => ul.appendChild(h('li', { dataset: { todo: t.kind } }, h('span', { text: t.text || fmt(lbl('TODO', t.kind), Object.assign({}, t, { n: t.n == null ? '' : t.n, sectionText: t.section ? lbl('SECTION', t.section) : '' })) }), TODO_VIEW[t.kind] ? btn(T.open, () => go(TODO_VIEW[t.kind], t.kind === 'HANDOVER_ACCEPT' ? 'transit' : ''), 'sec sm') : null))); card.appendChild(ul); }
       else if (!(r.cycle && r.cycle.id)) card.appendChild(h('p', { class: 'empty', text: T.todoNone }));
       box.appendChild(card);
+      /* owner 26 Nov: quick fixes - the technician takes / finishes them here, the salesperson sees his own */
+      if ((r.qfix || []).length) {
+        const qc = h('div', { class: 'card', id: 'homeQfix' }, h('h2', { text: T.qfHome }));
+        r.qfix.forEach(q => qc.appendChild(h('div', { class: 'qfix-row' }, h('p', {}, h('b', { text: q.stockId + ' ' + (q.model || '') }), h('br'), h('span', { text: qfixText(q) })),
+          h('div', { class: 'btns' }, [btn(T.qfOpen, () => openLaptop(q.stockId), 'sec')].concat(qfixButtons(q))))));
+        box.appendChild(qc);
+      }
       const ac = h('div', { class: 'card' }, h('h2', { text: T.myActions }));
       ac.appendChild(simpleTable([{ k: 'at', l: T.cAt, v: a => a.at || a.time || '', fmt: fmtDT }, { k: 'text', l: T.cAction, v: a => a.text || humanAction(a.action) }, { k: 'ref', l: T.cRef, main: true }], r.myActions || [], { empty: T.myActionsNone }));
       acts.appendChild(ac);
