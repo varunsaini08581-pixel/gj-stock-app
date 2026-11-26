@@ -1,6 +1,6 @@
 /* GJ App service worker. Caches the app shell only; API calls always go to the network (no offline data).
    Only successful (HTTP 200, same-origin) responses are cached, so an error page can never be served later. */
-const VERSION = '4.0.14'; /* round 67 (RV66-07): GJ App 4.0.8 - new cache name, so a page loaded before rounds 65 / 67 is replaced (R46: 4.0.7) */
+const VERSION = '4.0.15'; /* round 67 (RV66-07): GJ App 4.0.8 - new cache name, so a page loaded before rounds 65 / 67 is replaced (R46: 4.0.7) */
 const CACHE = 'gj-app-' + VERSION;
 const SHELL = ['./', 'index.html', 'style.4.0.0.css', 'config.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'lib/decoder.js',
   'js/00_str.js', 'js/10_core.js', 'js/12_ui.js', 'js/14_shell.js', 'js/20_home.js', 'js/30_stock.js', 'js/40_purchase.js', 'js/50_sales.js', 'js/60_jobs.js',
