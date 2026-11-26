@@ -31,9 +31,9 @@ Object.assign(T, {
   onTitle: 'Old stock without scan', onIntro: 'Only for a laptop that was already in the shop and cannot be scanned with the pendrive. The entry always needs approval.', onSticker: 'New GJ sticker', onLocation: 'Section',
   cpuHint: 'Example: Intel Core i5-8350U (8th Gen). Type "Not known" when it cannot be read.',
   slTitle: 'Stock list', slSearch: 'Search ID, serial, brand, model…', slStateDefault: 'In stock and waiting', slFlag: 'Flag', slPrint8: 'Print stock sheet (8 columns)', slEmpty: 'No laptops match.',
-  buTitle: 'Complete stock records', buProgress: '{n} of {N} complete', buIntro: 'Fill in the missing dealer, arrival date, purchase rate, warranty and charger of migrated laptops. Existing values are not overwritten unless you tick "Replace existing values".',
+  buTitle: 'Complete stock records', buProgress: '{n} of {N} complete', buIntro: 'Fill in the missing dealer, arrival date, purchase rate and warranty of migrated laptops. Existing values are not overwritten unless you tick "Replace existing values".',
   bmTab: 'Move to a section', bmIntro: 'Tick the laptops and choose where they now stand. Only laptops in the shop with status Ready, Under check or Needs repair can be moved.', bmFrom: 'Laptops now in', bmTo: 'Move them to', bmStatus: 'Set status to', bmKeep: 'Keep their status', bmAll: 'Tick all', bmSave: 'Move {n} laptop(s)', bmNone: 'Tick at least one laptop.', bmDone: '{ok} moved, {bad} not moved', bmEmpty: 'No laptop here can be moved.',
-  buSaveRows: 'Save changed rows', buPaste: 'Paste from Excel', buPasteHint: 'Copy the rows from Excel including the header row: Stock ID, Dealer, Arrival date, Bill no., Bill date, Warranty days, Purchase rate, Charger, Note.',
+  buSaveRows: 'Save changed rows', buPaste: 'Paste from Excel', buPasteHint: 'Copy the rows from Excel including the header row: Stock ID, Dealer, Arrival date, Bill no., Bill date, Warranty days, Purchase rate, Charger (optional, may stay empty), Note.',
   buCheck: 'Check pasted rows', buSaveValid: 'Save {n} valid rows', buReplace: 'Replace existing values', buRowOk: 'OK', buRowErr: 'Error', buSavedN: '{ok} rows saved, {bad} rows with errors.', buNoChange: 'No rows were changed.',
   buMissing: 'Missing', buAllDone: 'All stock records are complete.', buBadHeader: 'The first row must be the header row copied from the template.', buResult: 'Result',
   eDealer: 'Dealer not found', eDate: 'Invalid date', eWarranty: 'Use None, 15, 30 or 90', eRate: 'Whole number above 0', eCharger: 'Unknown charger value', eId: 'Invalid Stock ID'
@@ -294,7 +294,7 @@ VIEWS.bulk = {
       const cols = [{ k: 'id', l: T.fId, main: true }, { k: 'model', l: T.fModel, main: true }, { k: 'missing', l: T.buMissing, v: r => (r.missing || []).map(m => ({ dealer: T.fDealer, arrivedOn: T.fArrived, rate: T.fRate, warrantyDays: T.fWarrantyDays, charger: T.fCharger })[m] || m).join(', ') },
         { k: 'dealerId', l: T.fDealer, el: r => cellInput(r, 'dealerId', 'sel', dealerOpts()) }, { k: 'arrivedOn', l: T.fArrived, el: r => cellInput(r, 'arrivedOn', 'date') }, { k: 'billNo', l: T.fBillNo, el: r => cellInput(r, 'billNo', 'text') },
         { k: 'billDate', l: T.fBillDate, el: r => cellInput(r, 'billDate', 'date') }, { k: 'warrantyDays', l: T.fWarrantyDays, el: r => cellInput(r, 'warrantyDays', 'sel', warrantyOpts()) },
-        { k: 'rate', l: T.fRate, el: r => cellInput(r, 'rate', 'num') }, { k: 'charger', l: T.fCharger, el: r => cellInput(r, 'charger', 'sel', opts('CHARGER', ['ORIGINAL', 'COMPATIBLE', 'NONE'])) }];
+        { k: 'rate', l: T.fRate, el: r => cellInput(r, 'rate', 'num') }]; /* owner 26 Nov: no charger column - chargers are counted as accessories */
       function cellInput(r, k, type, o) {
         const cur = r[k] == null ? '' : String(r[k]); let el;
         if (type === 'sel') { el = h('select', { 'aria-label': k }); el.appendChild(h('option', { value: '', text: T.select })); o.forEach(x => el.appendChild(h('option', { value: x.v, text: x.t }))); el.value = cur; }

@@ -392,7 +392,7 @@ function buildTable(cols, rows, o) {
   const tb = h('tbody'), anyCard = cols.some(c => c.card);
   rows.forEach((row, idx) => {
     const tr = h('tr', { dataset: { idx }, class: o.onRow ? 'click' : '', tabindex: o.onRow ? '0' : null });
-    cols.forEach(c => { const td = h('td', { class: (c.num ? 'num ' : '') + (c.main ? 'main ' : '') + (c.act ? 'act' : '') + (anyCard && !c.card && !c.main && !c.act ? ' nocard' : ''), 'data-label': c.l }); append(td, c.el ? c.el(row, idx) : (c.fmt ? c.fmt(cellText(c, row), row) : String(cellText(c, row)))); tr.appendChild(td); });
+    cols.forEach(c => { const td = h('td', { class: (c.num ? 'num ' : '') + (c.main ? 'main ' : '') + (c.act ? 'act' : '') + (anyCard && !c.card && !c.main && !c.act ? ' nocard' : ''), 'data-label': c.l }); append(td, c.el ? c.el(row, idx) : (c.fmt ? c.fmt(cellText(c, row), row) : String(cellText(c, row)))); if (!c.el && /^[A-Z]{1,4}-[0-9A-Z]{2,8}$/.test(td.textContent)) td.classList.add('nw'); /* QA74: an ID (GJ-0001, AP-0023) is never split over two lines */ tr.appendChild(td); });
     tb.appendChild(tr);
   });
   table.appendChild(tb);

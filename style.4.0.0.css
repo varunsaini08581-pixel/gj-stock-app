@@ -116,6 +116,11 @@ input:disabled,select:disabled{background:#eef2f7;color:#475569}
 input.code{font-weight:700;letter-spacing:.5px;text-transform:uppercase}
 .tick{display:flex;align-items:center;gap:10px;min-height:44px;font-size:15px;font-weight:500;color:var(--text);cursor:pointer;margin:0}
 .tick input{width:22px;height:22px;flex:0 0 22px;margin:0;accent-color:var(--blue)}
+/* QA74: a tick box inside a form field or a filter bar kept the block label style (.fld label), so the box sat above its text */
+.fld label.tick,.filters .fld label.tick{display:flex;font-size:15px;font-weight:500;color:var(--text);margin:0}
+.chk{display:flex;align-items:center;gap:8px;min-height:40px;cursor:pointer}
+.chk input{width:20px;height:20px;flex:0 0 20px;margin:0;accent-color:var(--blue)}
+.scanbox input::placeholder{font-size:15px;font-weight:500;letter-spacing:0;text-transform:none}
 .multi{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:0 12px}
 .codebox{display:flex;gap:8px}.codebox input{flex:1 1 auto;min-width:0}
 .scanbox{display:flex;gap:8px;flex-wrap:wrap}
@@ -205,8 +210,14 @@ video.cam{width:100%;border-radius:12px;background:#000;max-height:60vh}
   .filters .fld{max-width:none}
   h1{font-size:20px}
 }
+/* QA74: on a wide screen a table cell no longer breaks inside a word or an ID (GJ- / 0001, warrant / y); the ID column stays on one line */
+@media (min-width:481px){
+  .tbl td{overflow-wrap:break-word}
+  .tbl tbody td.nw{white-space:nowrap}
+}
 @media (max-width:480px){
   main#view{padding:10px 10px 24px}
+  .scanbox input{flex-basis:100%}
   .tiles{grid-template-columns:1fr 1fr}
   .tbl.cards thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
   .tbl.cards,.tbl.cards tbody,.tbl.cards tfoot,.tbl.cards tr,.tbl.cards td{display:block;width:100%}
