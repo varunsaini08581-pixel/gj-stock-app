@@ -374,10 +374,10 @@ Object.assign(T, { cField: 'Field' });
 /* ---------- quick fix (owner 26 Nov) ---------- */
 Object.assign(C, { QF_WORK: { HINGE: 'Hinge tightening', SCREWS: 'Screws / small fitting', CLEAN: 'Cleaning', KEYBOARD: 'Keyboard key', OTHER: 'Other (describe)' },
   QF_STATUS: { OPEN: 'Waiting for the technician', TAKEN: 'With the technician', DONE: 'Done', CANCELLED: 'Cancelled' } });
-Object.assign(T, { bQfix: 'Quick fix', qfTitle: 'Quick fix — {id}', qfIntro: 'A small fix while the customer waits (hinge, screws, cleaning, a key). The laptop stays in Sales; the technician takes it, fixes it and marks it done. It cannot be sold until the fix is done and the laptop is scanned with the pendrive. Changing a part (RAM, SSD, battery …) is not a quick fix — use Parts.',
+Object.assign(T, { bQfix: 'Quick fix', qfTitle: 'Quick fix — {id}', qfIntro: 'A small fix while the customer waits (hinge, screws, cleaning, a key). The laptop stays in Sales; the technician takes it, fixes it and marks it done. It cannot be sold until the fix is marked done. Changing a part (RAM, SSD, battery …) is not a quick fix — use Parts.',
   qfWork: 'What needs to be done', qfNote: 'Details', qfTo: 'Technician', qfAsked: 'Quick fix asked. {name} has been told.', qfBox: 'Quick fix: {work} — asked by {by} at {at}. {state}', qfWith: 'With {name} since {at}.', qfWaiting: 'Waiting for {name}.',
   bQfTake: 'Take it', bQfDone: 'Fix done', bQfCancel: 'Cancel quick fix', qfTaken: 'Taken. Mark it done when the fix is finished.', qfDoneTitle: 'Quick fix done — {id}', qfDoneNote: 'What was done (optional)',
-  qfDone: 'Done. The salesperson has been told — scan the laptop with the pendrive before the sale.', qfCancelTitle: 'Cancel quick fix — {id}', qfCancelled: 'Quick fix cancelled.', qfHome: 'Quick fixes', qfNone: 'No quick fixes.', qfOpen: 'Open laptop' });
+  qfDone: 'Done. The salesperson has been told — the laptop can be sold.', qfCancelTitle: 'Cancel quick fix — {id}', qfCancelled: 'Quick fix cancelled.', qfHome: 'Quick fixes', qfNone: 'No quick fixes.', qfOpen: 'Open laptop' });
 function qfixText(q) {
   const work = lbl('QF_WORK', q.work) + (q.note ? ' (' + q.note + ')' : '');
   const state = q.status === 'TAKEN' ? fmt(T.qfWith, { name: q.takenByName, at: fmtDT(q.takenAt) }) : q.status === 'OPEN' ? fmt(T.qfWaiting, { name: q.assignedName }) : lbl('QF_STATUS', q.status);
