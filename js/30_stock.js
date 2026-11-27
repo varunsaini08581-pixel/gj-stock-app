@@ -25,6 +25,7 @@ Object.assign(T, {
   bReinstate: 'Back in stock (found / repaired)', riTitle: 'Bring {id} back into stock', riIntro: 'For a written-off laptop that came back (stolen and recovered, scrap repaired). The owner approves. It goes to Repair as Under check with a new life; scan it fully with the pendrive before it can be sold.', riDone: 'Back in stock. Scan it with the pendrive in Repair.',
   raTitle: 'Move to another PO line — {id}', raPo: 'PO number', raLine: 'Line number', raShip: 'Shipment ID (optional)',
   smTitle: 'Sticker missing', smIntro: 'Report a laptop whose sticker has fallen off or cannot be read.', smSerial: 'Stock ID or serial number', smSaved: 'Reported to the manager.',
+  bAcceptDead: 'Accept without scan (does not power on)', haDeadIntro: 'Use this only when the laptop does not power on and cannot be scanned. The owner is informed, and the laptop cannot be sold until it has been scanned with the pendrive again after the repair.', haDeadNote: 'What is wrong (does not power on, no display, etc.)',
   haTitle: 'Accept handover — {id}', haIntro: 'Check the laptop before accepting. From now it is the responsibility of your section.', hsTitle: 'Hand over to {to} — {id}', hsText: 'Note for the receiver',
   hsDone: 'Sent. It stays in your name until it is accepted.', haDone: 'Accepted.', hcDone: 'Handover cancelled.', unsealDone: 'Seal removed. A pendrive scan is due in this cycle.',
   histTitle: 'History — {id}', hKind: 'Kind', hText: 'Details',
@@ -102,6 +103,7 @@ function drawLaptop(box, r, m) {
     if (it.transit) {
       const sender = (it.transit.byId || it.transit.by) === S.me.userId;
       if (unscannable(it) && !sender && (isMgr() || S.me.section === it.transit.to)) add(T.bAccept, () => acceptDialog(it), '');
+      else if (it.transit.to === 'REPAIR' && !sender && (isMgr() || S.me.section === 'REPAIR')) add(T.bAcceptDead, () => acceptDialog(it, true), 'sec'); /* owner 27 Nov: a laptop that does not power on */
       if (sender || isMgr()) add(T.bCancelHand, e => runAction(e.currentTarget, 'handover.cancel', { id: it.id }, { ok: T.hcDone }));
     } else if (inShop && mine && unscannable(it)) { const to = it.location === 'SALES' ? 'REPAIR' : 'SALES'; add(fmt(T.bHandTo, { to: lbl('SECTION', to) }), () => sendDialog(it, to)); }
   }
@@ -176,11 +178,11 @@ function statusDialog(it) {
   return m;
 }
 function sendDialog(it, to) { return actionDialog({ title: fmt(T.hsTitle, { to: lbl('SECTION', to), id: it.id }), action: 'handover.sendNoScan', fields: [{ k: 'text', l: T.hsText, t: 'area', max: 200 }], build: v => Object.assign({ id: it.id, to }, v), ok: T.hsDone }); }
-function acceptDialog(it) {
+function acceptDialog(it, dead) {
   const ck = ['CHARGER', 'SCREEN', 'KEYBOARD', 'BODY'];
-  return actionDialog({ title: fmt(T.haTitle, { id: it.id }), intro: T.haIntro, action: 'handover.acceptNoScan', submit: T.bAccept,
-    fields: ck.map(c => ({ k: c, l: lbl('CHECK', c), t: 'sel', req: true, o: opts('CHECK_RESULT', ['OK', 'ISSUE']) })).concat(it.sealNo ? [{ k: 'sealNo', l: T.fSeal, req: true }] : []),
-    build: v => { const d = { id: it.id, checklist: {} }; ck.forEach(c => { d.checklist[c] = v[c]; }); if (v.sealNo) d.sealNo = v.sealNo; return d; }, ok: T.haDone });
+  return actionDialog({ title: fmt(T.haTitle, { id: it.id }), intro: dead ? T.haDeadIntro : T.haIntro, action: 'handover.acceptNoScan', submit: T.bAccept,
+    fields: (dead ? [{ k: 'deadNote', l: T.haDeadNote, t: 'area', req: true, max: 200, wide: true }] : []).concat(ck.map(c => ({ k: c, l: lbl('CHECK', c), t: 'sel', req: true, o: opts('CHECK_RESULT', ['OK', 'ISSUE']) }))).concat(it.sealNo ? [{ k: 'sealNo', l: T.fSeal, req: true }] : []),
+    build: v => { const d = { id: it.id, checklist: {} }; ck.forEach(c => { d.checklist[c] = v[c]; }); if (v.sealNo) d.sealNo = v.sealNo; if (dead) { d.dead = 'Y'; d.deadNote = v.deadNote; } return d; }, ok: T.haDone });
 }
 
 /* ---------- D3 edit laptop (only changed fields are sent) ---------- */
