@@ -208,6 +208,9 @@ function mkForm(fields, init, fo) {
     else { wrap.appendChild(label); wrap.appendChild(inp); wrap.appendChild(hintEl); }
     if (fd.onEnter && inp.tagName === 'INPUT') inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); e.stopPropagation(); fd.onEnter(F.val(fd.k)); } });
     F.f[fd.k] = { fd, inp, wrap, hintEl };
+    if (fd.t === 'pin') inp.addEventListener('input', () => { if (inp.dataset.fp) { delete inp.dataset.fp; inp.placeholder = fd.ph || ''; wrap.classList.remove('fp-ok'); hintEl.textContent = fd.hint || ''; } });
+    /* owner 27 Nov: "Use fingerprint" next to the person's own PIN box (owner / manager with the fingerprint on this device) */
+    if (fd.t === 'pin' && fd.k === 'pin' && !fd.noFp && typeof fpBoxButton === 'function') { const fb = fpBoxButton(F, fd.k); if (fb) { wrap.classList.add('has-fp'); wrap.insertBefore(fb, hintEl); } }
     F.el.appendChild(wrap);
   });
   F.val = k => {
@@ -219,6 +222,7 @@ function mkForm(fields, init, fo) {
       case 'static': return undefined;
       case 'mobile': { const v = normMobile(inp.value); return v === '' ? undefined : v; }
       case 'code': { const v = fd.sticker ? normSticker(inp.value, fd.sticker) : normCode(inp.value); return v === '' ? undefined : v; }
+      case 'pin': if (inp.dataset.fp) return inp.dataset.fp; { const v = String(inp.value || '').trim(); return v === '' ? undefined : v; } /* owner 27 Nov: the fingerprint token */
       default: { const v = String(inp.value || '').trim(); return v === '' ? undefined : v; }
     }
   };
@@ -226,7 +230,7 @@ function mkForm(fields, init, fo) {
   F.get = () => { const v = {}; Object.keys(F.f).forEach(k => { if (F.visible(k)) { const x = F.val(k); if (x !== undefined) v[k] = x; } }); return v; };
   F.all = () => { const v = {}; Object.keys(F.f).forEach(k => { const x = F.val(k); if (x !== undefined) v[k] = x; }); return v; };
   F.sync = () => { const v = F.all(); Object.keys(F.f).forEach(k => { const fd = F.f[k].fd; if (fd.show) F.f[k].wrap.hidden = !fd.show(v); }); };
-  F.set = (k, val) => { const x = F.f[k]; if (!x) return; if (x.fd.t === 'check') x.inp.checked = val === true || val === 'Y'; else if (x.fd.t === 'sel') fillSelect(x.inp, x.fd, val); else if (x.fd.t === 'money') x.inp.value = grp(val); else if (x.fd.t === 'static') { clear(x.inp); append(x.inp, val); } else x.inp.value = val == null ? '' : val; F.sync(); };
+  F.set = (k, val) => { const x = F.f[k]; if (!x) return; if (x.fd.t === 'pin' && x.inp.dataset.fp) { delete x.inp.dataset.fp; x.inp.placeholder = x.fd.ph || ''; x.wrap.classList.remove('fp-ok'); x.hintEl.textContent = x.fd.hint || ''; } if (x.fd.t === 'check') x.inp.checked = val === true || val === 'Y'; else if (x.fd.t === 'sel') fillSelect(x.inp, x.fd, val); else if (x.fd.t === 'money') x.inp.value = grp(val); else if (x.fd.t === 'static') { clear(x.inp); append(x.inp, val); } else x.inp.value = val == null ? '' : val; F.sync(); };
   F.setOpts = (k, o) => { const x = F.f[k]; x.fd.o = o; fillSelect(x.inp, x.fd, x.inp.value); };
   F.clearErr = () => Object.keys(F.f).forEach(k => { const x = F.f[k]; x.wrap.classList.remove('invalid'); x.inp.removeAttribute('aria-invalid'); if (x.fd.t !== 'mobile') x.hintEl.textContent = x.fd.hint || ''; });
   F.mark = (k, msg) => { const x = F.f[k]; if (!x) return false; x.wrap.classList.add('invalid'); x.inp.setAttribute('aria-invalid', 'true'); if (msg) x.hintEl.textContent = msg; if (!x.wrap.hidden && x.inp.focus) { try { x.inp.focus(); } catch (e) { /* ignore */ } } return true; };
@@ -239,7 +243,7 @@ function mkForm(fields, init, fo) {
       if (fd.req && empty) { const msg = fmt(T.required, { field: fd.l }); F.mark(k, msg); return msg; }
       if (v === undefined) continue;
       if (fd.t === 'mobile' && !validMobile(v)) { F.mark(k, T.mobileHint); return T.mobileHint; }
-      if (fd.t === 'pin' && v.length !== (fd.len || 6)) { F.mark(k, T.pinHint); return T.pinHint; }
+      if (fd.t === 'pin' && !(typeof PK === 'object' && PK.isToken(v)) && v.length !== (fd.len || 6)) { F.mark(k, T.pinHint); return T.pinHint; }
       if (fd.t === 'digits' && fd.len && v.length !== fd.len) { const msg = fmt(T.invalid, { field: fd.l }); F.mark(k, msg); return msg; }
       if ((fd.t === 'int' || fd.t === 'money') && ((fd.min != null && v < fd.min) || (fd.maxv != null && v > fd.maxv))) { const msg = fmt(T.invalid, { field: fd.l }); F.mark(k, msg); return msg; }
       if (fd.noSticker && isSticker(v)) { const msg = T.serialIsSticker; F.mark(k, msg); return msg; }

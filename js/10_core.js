@@ -154,7 +154,7 @@ let _pinMemo = null; /* one PIN entry serves the requests of the next 20 seconds
    ID was kept only after NET and only by callConfirmed; R4chaos-10). A new dialog has a new nonce, so the same values typed again on
    purpose are a new save (the server may still ask "typed twice on purpose?" - CONFIRM_DUPLICATE_ENTRY). */
 const RIDS = new Map(); const RID_KEEP_MS = 6 * 3600000; const RID_OPEN = { NET: 1, SYS_BUSY: 1, SYS_ERROR: 1, STORAGE: 1 };
-function ridJson(v) { if (Array.isArray(v)) return '[' + v.map(ridJson).join(',') + ']'; if (v && typeof v === 'object') return '{' + Object.keys(v).filter(k => k !== 'pin' && v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + ridJson(v[k])).join(',') + '}'; return JSON.stringify(v === undefined ? null : v); }
+function ridJson(v) { if (Array.isArray(v)) return '[' + v.map(ridJson).join(',') + ']'; if (v && typeof v === 'object') return '{' + Object.keys(v).filter(k => k !== 'pin' && k !== 'passkey' && v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + ridJson(v[k])).join(',') + '}'; return JSON.stringify(v === undefined ? null : v); }
 function ridScope(o) { if (o && o.scope) return o.scope; const ms = typeof MODALS !== 'undefined' && MODALS.length ? MODALS[MODALS.length - 1] : null; return ms && ms.scope ? ms.scope : 'v' + S.tok; }
 function ridKey(action, data, scope) { return action + '|' + scope + '|' + ridJson(data || {}); }
 /* ridFor: the request ID of this save (the kept one while the last answer was not definite); ridSettle: forget it after a definite answer */
@@ -183,8 +183,11 @@ async function api(action, data, o) {
     _pinMemo = { pin, at: Date.now() }; data = Object.assign({}, data || {}, { pin });
     const r0 = await api(action, data, o); if (!r0.ok && r0.code === 'AUTH_PIN_WRONG') _pinMemo = null; return r0;
   }
+  /* owner 27 Nov: a PIN box filled by the fingerprint sends the fingerprint (passkey) in place of the PIN */
+  if (data && typeof PK === 'object' && PK.isToken(data.pin)) { const a = PK.take(data.pin); if (!a) return { ok: false, code: 'PASSKEY_EXPIRED', field: 'pin', msg: T.fpExpired }; data = Object.assign({}, data, { passkey: a }); delete data.pin; }
   const rk = o.rid ? '' : ridKey(action, data, ridScope(o)), rid = o.rid || ridFor(rk);
   let r = await apiSend(action, data, o, rid);
+  if (r && r.code === 'PASSKEY_OFF' && typeof PK === 'object' && S.me) PK.forget();
   if (rk) ridSettle(rk, r);
   return r;
 }

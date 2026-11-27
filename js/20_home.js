@@ -20,7 +20,7 @@ const HOME_TILES = [
   ['dealers', 'tDealers', () => has('dealer.view') || has('po') || has('dealer.add')], ['outside', 'tOutside', () => has('outside')], ['count', 'tCount', () => has('count')], ['cycle', 'tCycle', () => has('scan') || has('sheet.submit')],
   ['rota', 'tRota', () => has('rota')], ['approvals', 'tApprovals', () => has('approve')], ['alerts', 'tAlerts', () => has('dash')], ['dash', 'tDash', () => has('dash')], ['reports', 'tReports', () => has('dash')],
   ['bulk', 'tBulk', () => has('stock.bulk')], ['staff', 'tStaff', () => has('admin.users')], ['devices', 'tDevices', () => has('admin.devices')], ['settings', 'tSettings', () => has('admin.config')],
-  ['log', 'tLog', () => has('admin.log')], ['pin', 'tPin', () => true]
+  ['log', 'tLog', () => has('admin.log')], ['pin', 'tPin', () => true], ['fp', 'tFp', () => typeof PK === 'object' && PK.roleOk(S.me) && PK.supported()]
 ];
 const TODO_VIEW = { PARTS_COUNT_DUE: 'count', EXEMPT_SIGHT: 'stock', DAY_CLOSE: 'dayclose', ROTA_NOT_SET: 'rota', CYCLE_RESPONSIBLE_ABSENT: 'rota', TODO: '', SCAN_DUE: 'cycle', SPOT_CHECK: 'cycle', HANDOVER_ACCEPT: 'stock', COUNT_TURN: 'count', CYCLE_RESPONSIBLE: 'cycle', SLIPS_NOT_SENT: 'jobs', UNCONFIRMED_SALES: 'sales', APPROVALS: 'approvals', ALERTS: 'alerts', SALE_REQUESTS: 'reservations' };
 const TILE_BADGE = { approvals: 'approvals', alerts: 'alerts', sales: 'unconfirmed', jobs: 'slips', stock: 'handovers', reservations: 'saleRequests' };

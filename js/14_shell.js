@@ -142,12 +142,13 @@ function lockScreen(reason) {
   if (reason === 'idle' && old) Net.send('auth.logout', {}, { session: old });
   document.body.classList.add('locked'); $('#app').inert = true; $('#modals').inert = true;
   const ov = clear($('#lock')); ov.hidden = false;
-  const F = mkForm([{ k: 'pin', l: T.pin, t: 'pin', req: true }]);
+  const F = mkForm([{ k: 'pin', l: T.pin, t: 'pin', req: true, noFp: true }]);
   const err = h('div', { class: 'errbox', role: 'alert', hidden: true });
   const b = btn(T.unlock, tryUnlock);
+  const fpL = PK.mine(), fb = fpL ? btn(T.fpUnlock, fpUnlock, 'sec', { id: 'fpUnlock' }) : null; /* owner 27 Nov */
   append(ov, h('div', { class: 'overlay-box', role: 'dialog', 'aria-modal': 'true', 'aria-label': T.lockTitle }, h('h2', { text: T.lockTitle }),
     h('p', { text: reason === 'idle' ? T.lockIdle : T.lockSession }), h('p', { class: 'lock-user', text: fmt(T.lockUser, { name: S.me.name }) }), F.el, err,
-    h('div', { class: 'foot-btns' }, btn(T.otherUser, signOutLocal, 'sec'), b)));
+    fb ? h('div', { class: 'btns fp-row' }, fb) : null, h('div', { class: 'foot-btns' }, btn(T.otherUser, signOutLocal, 'sec'), b)));
   let done, busy = false; lockP = new Promise(r => { done = r; });
   F.f.pin.inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (!e.repeat) tryUnlock(); } });
   soon(() => F.f.pin.inp.focus());
@@ -157,6 +158,16 @@ function lockScreen(reason) {
     const r = await api('auth.login', { mobile: S.mobile, pin: F.val('pin') }, { noSession: true, noLock: true });
     busy = false; b.disabled = false;
     if (!r.ok) { err.textContent = r.msg; err.hidden = false; F.set('pin', ''); F.f.pin.inp.focus(); return; }
+    unlocked(r);
+  }
+  async function fpUnlock() {
+    if (busy) return; busy = true; fb.disabled = true; err.hidden = true;
+    const r = await PK.signIn(fpL);
+    busy = false; fb.disabled = false;
+    if (!r.ok) { if (!r.cancelled) { err.textContent = r.msg; err.hidden = false; } if (r.code === 'PASSKEY_OFF') fb.remove(); return; }
+    unlocked(r);
+  }
+  function unlocked(r) {
     if (!r.me || r.me.userId !== S.me.userId) { signOutLocal(); return; }
     setSession(r);
     S.locked = false; document.body.classList.remove('locked'); ov.hidden = true; clear(ov);
@@ -310,13 +321,26 @@ async function startSession() {
 }
 function showLogin(msg) {
   S.me = null; S.token = '';
-  const F = mkForm([{ k: 'mobile', l: T.mobile, t: 'mobile', req: true, wide: true }, { k: 'pin', l: T.pin, t: 'pin', req: true, wide: true }]);
+  const F = mkForm([{ k: 'mobile', l: T.mobile, t: 'mobile', req: true, wide: true }, { k: 'pin', l: T.pin, t: 'pin', req: true, wide: true, noFp: true }]);
   const err = h('div', { class: 'errbox', role: 'alert', hidden: !msg, text: msg || '' }); const b = btn(T.signIn, submit, '', { id: 'loginBtn' });
-  stage([h('h1', { text: T.loginTitle }), F.el, err, h('div', { class: 'foot-btns' }, b)]);
+  /* owner 27 Nov: the fingerprint of the owner / manager saved on this device - one tap, nothing typed in front of the staff */
+  const fpL = PK.supported() ? PK.local() : null;
+  const fb = fpL ? btn(fmt(T.fpSignInAs, { name: fpL.name }), fpSubmit, '', { id: 'fpLogin' }) : null;
+  if (fpL) F.set('mobile', fpL.mobile);
+  stage([h('h1', { text: T.loginTitle }), fb ? h('div', { class: 'btns fp-row' }, fb) : null, fb ? h('p', { class: 'muted fp-or', text: T.fpOrPin }) : null, F.el, err, h('div', { class: fb ? 'foot-btns' : 'foot-btns' }, b)]);
   let busy = false;
   /* Holding Enter must send one request only (F410). */
   F.el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); if (!e.repeat && !busy) submit(); } });
-  soon(() => F.f.mobile.inp.focus());
+  if (fpL) soon(fpSubmit); else soon(() => F.f.mobile.inp.focus());
+  async function fpSubmit() {
+    if (busy) return; busy = true; fb.disabled = true; b.disabled = true; err.hidden = true;
+    const r = await PK.signIn(fpL);
+    busy = false; fb.disabled = false; b.disabled = false;
+    if (document.body.classList.contains('stale')) return;
+    if (!r.ok) { if (!r.cancelled) { err.textContent = r.msg; err.hidden = false; } if (r.code === 'PASSKEY_OFF' || r.code === 'PASSKEY_ROLE') { fb.remove(); } return; }
+    S.mobile = fpL.mobile; setSession(r); if (r.lists) S.lists = r.lists;
+    if (r.mustChangePin) showChangePin(true); else enterApp();
+  }
   async function submit() {
     if (busy) return; err.hidden = true; const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; }
     busy = true; b.disabled = true; const v = F.get();

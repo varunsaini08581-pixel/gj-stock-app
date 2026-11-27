@@ -276,3 +276,6 @@ video.cam{width:100%;border-radius:12px;background:#000;max-height:60vh}
   .note{box-shadow:0 1px 2px rgba(15,23,42,.04)}
   @media (prefers-reduced-motion:reduce){.tile,.btn,.tab,.thbtn,input,select,textarea{transition:none}}
 }
+
+/* owner 27 Nov: fingerprint */
+.fpbtn{margin-top:.4rem}.fld.fp-ok input.pin{border-color:#16a34a;background:#f0fdf4}.fld.fp-ok .hint{color:#15803d;font-weight:600}.fp-row{margin:.5rem 0}.fp-row .btn,.fp-row button{width:100%}.fp-or{text-align:center;margin:.25rem 0 .75rem}
