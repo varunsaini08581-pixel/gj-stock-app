@@ -201,7 +201,10 @@ function saleDialog(s) {
       { k: 'mobile', l: T.fMobile, t: 'mobile', req: true, dflt: s.mobile }, { k: 'saleDate', l: T.seDate, t: 'date', req: true, maxToday: true, dflt: String(s.saleDate || '').slice(0, 10) },
       { k: 'warrantyDays', l: T.seWarranty, t: 'sel', o: custWarrantyOpts, dflt: s.warrantyDays == null ? '' : String(s.warrantyDays) },
       { k: 'salespersonId', l: T.fSalesperson, t: 'sel', o: () => userOpts(u => u.role !== 'REPAIR'), dflt: s.salespersonId || '' }],
-    build: v => ({ saleId: s.saleId, fields: v }), ok: T.saConfirmedOk }); }, '', { id: 'saleConfirm' }));
+    /* audit B-03: only the boxes the owner changed are sent - a box left as shown never writes an old value over a correction made meanwhile */
+    build: v => { const was = { price: s.price, billNo: s.billNo, customer: s.customer, mobile: s.mobile, saleDate: String(s.saleDate || '').slice(0, 10), warrantyDays: s.warrantyDays == null ? '' : String(s.warrantyDays), salespersonId: s.salespersonId || '' }, f = {};
+      Object.keys(v).forEach(k => { if (!(k in was)) return; const a = String(v[k] == null ? '' : v[k]).trim(), b = String(was[k] == null ? '' : was[k]).trim(); if (k === 'price' ? Number(a) !== Number(b) : a !== b) f[k] = v[k]; });
+      return { saleId: s.saleId, fields: f }; }, ok: T.saConfirmedOk }); }, '', { id: 'saleConfirm' }));
   else if (open && has('sale.confirm') && s.confirmed !== 'Y' && !isMe(s.enteredBy)) A.appendChild(btn(T.saConfirm, async e => { const r = await runAction(e.currentTarget, 'sale.confirm', { saleId: s.saleId }, { ok: T.saConfirmedOk }); if (r.ok) { m.close(); const w = r.warnings || (r.sale && r.sale.warnings); if (w && w.length) confirmBox(h('div', null, h('p', { text: T.saCostWarn }), chipList('SALE_WARN', w, 'warn')), { yes: T.ok, no: T.close }); } }, '', { id: 'saleConfirm' }));
   if (open && s.pickupPending === 'Y' && (has('sale.handover') || has('sale.create') || has('sale.confirm'))) A.appendChild(btn(T.saHanded, async e => { const r = await runAction(e.currentTarget, 'sale.handedOver', { saleId: s.saleId }, { ok: T.saHandedOk }); if (r.ok) m.close(); }, 'sec'));
   if (open && has('sale.correct')) {

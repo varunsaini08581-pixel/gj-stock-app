@@ -10,6 +10,7 @@ Object.assign(T, {
   fpTurnedOn: 'Fingerprint sign-in is on. Next time, tap "Sign in with fingerprint".', fpTurnedOff: 'Fingerprint sign-in is off on this device.',
   fpNoDevice: 'This phone or browser has no fingerprint / screen lock that the GJ App can use. Set a fingerprint in the phone\'s settings and open the GJ App in Chrome.',
   fpOnlyMgr: 'Fingerprint sign-in is for the owner and the manager.',
+  fpShared: 'This is a shared shop device, so fingerprint sign-in cannot be turned on here (the device\'s own screen lock would count as you). Turn it on on your own phone. To make this device yours alone, the owner sets Devices → Allowed users to only you.',
   fpSignIn: 'Sign in with fingerprint', fpSignInAs: 'Sign in with fingerprint — {name}', fpUnlock: 'Unlock with fingerprint', fpUse: 'Use fingerprint',
   fpUsed: 'Fingerprint confirmed', fpCancelled: 'Fingerprint was cancelled. Try again, or type your PIN.', fpFailed: 'The fingerprint did not work. Try again, or type your PIN.',
   fpGone: 'Fingerprint sign-in is no longer on for you on this device (PIN reset or turned off). Sign in with your PIN and turn it on again.',
@@ -31,11 +32,13 @@ const PK = (() => {
     const r = await api('passkey.challenge', {}, { noSession: true, noLock: true, raw: true });
     if (!r.ok) throw r; if (!r.available) throw { ok: false, code: 'PASSKEY_NO_SUPPORT', msg: r.msg || T.fpFailed }; return r;
   }
-  const errOf = e => (e && e.ok === false ? e : { ok: false, code: e && e.name === 'NotAllowedError' ? 'CANCELLED' : 'PASSKEY_LOCAL', cancelled: !!(e && e.name === 'NotAllowedError'), msg: e && e.name === 'NotAllowedError' ? T.fpCancelled : T.fpFailed });
+  const gone = e => !!e && (e.name === 'NotAllowedError' || e.name === 'AbortError');
+  const errOf = e => (e && e.ok === false ? e : { ok: false, code: gone(e) ? 'CANCELLED' : 'PASSKEY_LOCAL', cancelled: gone(e), msg: gone(e) ? T.fpCancelled : T.fpFailed });
   /* one fingerprint: { a: assertion, until } */
-  async function assertion(l) {
+  async function assertion(l, signal) {
     const c = await challenge();
-    const cred = await navigator.credentials.get({ publicKey: { challenge: unb64u(c.challenge), rpId: location.hostname, allowCredentials: [{ type: 'public-key', id: unb64u(l.credId) }], userVerification: 'required', timeout: 60000 } });
+    if (signal && signal.aborted) throw { name: 'AbortError' };
+    const cred = await navigator.credentials.get({ signal, publicKey: { challenge: unb64u(c.challenge), rpId: location.hostname, allowCredentials: [{ type: 'public-key', id: unb64u(l.credId) }], userVerification: 'required', timeout: 60000 } });
     if (!cred || !cred.response) throw { name: 'NotAllowedError' };
     return { a: { id: l.credId, cd: b64u(cred.response.clientDataJSON), ad: b64u(cred.response.authenticatorData), sig: b64u(cred.response.signature) }, until: Date.now() + Math.max(10000, Math.min(150000, (Number(c.leftMs) || 120000) - 15000)) };
   }
@@ -45,10 +48,10 @@ const PK = (() => {
   const isToken = v => typeof v === 'string' && /^FP#\d+#\d+$/.test(v);
   /* fills a PIN box: returns the token or '' (message shown by the caller) */
   async function forBox() { const l = mine(); if (!l) return ''; const x = await assertion(l); return hold(x); }
-  async function signIn(l) {
-    let x; try { x = await assertion(l); } catch (e) { return errOf(e); }
+  async function signIn(l, signal) {
+    let x; try { x = await assertion(l, signal); } catch (e) { return errOf(e); }
     const r = await api('auth.login', { mobile: l.mobile, passkey: x.a }, { noSession: true, noLock: true });
-    if (!r.ok && (r.code === 'PASSKEY_OFF' || r.code === 'PASSKEY_ROLE')) { keep(null); r.msg = T.fpGone; }
+    if (!r.ok && (r.code === 'PASSKEY_OFF' || r.code === 'PASSKEY_ROLE' || r.code === 'PASSKEY_SHARED')) { keep(null); if (r.code !== 'PASSKEY_SHARED') r.msg = T.fpGone; }
     return r;
   }
   async function turnOn(pin) {
@@ -101,6 +104,7 @@ VIEWS.fp = {
     card.appendChild(note(on ? T.fpOnHere : T.fpOffHere, on ? 'ok' : ''));
     if (on && st.on[0].lastUsed) card.appendChild(h('p', { class: 'muted', text: fmt(T.fpLastUsed, { when: fmtDate(st.on[0].lastUsed) }) }));
     if (!dev && !on) { card.appendChild(note(T.fpNoDevice, 'warn')); return; }
+    if (!on && st.own === false) { card.appendChild(note(T.fpShared, 'warn')); return; } /* audit A-08: only on one's own device */
     const err = h('div', { class: 'errbox', role: 'alert', hidden: true });
     if (on) {
       const b = btn(T.fpTurnOff, async () => { b.disabled = true; const r = await PK.turnOff(); b.disabled = false; if (!r.ok) { err.textContent = r.msg; err.hidden = false; return; } notify(T.fpTurnedOff, 'ok'); renderRoute(); }, 'sec', { id: 'fpOff' });

@@ -328,27 +328,32 @@ function showLogin(msg) {
   const fb = fpL ? btn(fmt(T.fpSignInAs, { name: fpL.name }), fpSubmit, '', { id: 'fpLogin' }) : null;
   if (fpL) F.set('mobile', fpL.mobile);
   stage([h('h1', { text: T.loginTitle }), fb ? h('div', { class: 'btns fp-row' }, fb) : null, fb ? h('p', { class: 'muted fp-or', text: T.fpOrPin }) : null, F.el, err, h('div', { class: fb ? 'foot-btns' : 'foot-btns' }, b)]);
-  let busy = false;
+  let busy = false, fpBusy = false, fpStop = null, done = false;
   /* Holding Enter must send one request only (F410). */
   F.el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); if (!e.repeat && !busy) submit(); } });
   if (fpL) soon(fpSubmit); else soon(() => F.f.mobile.inp.focus());
+  /* audit A-09: the fingerprint prompt never blocks the PIN sign-in of the next person on a shared device - "Sign in" and Enter stay alive,
+     and a PIN sign-in closes the waiting prompt */
   async function fpSubmit() {
-    if (busy) return; busy = true; fb.disabled = true; b.disabled = true; err.hidden = true;
-    const r = await PK.signIn(fpL);
-    busy = false; fb.disabled = false; b.disabled = false;
+    if (busy || fpBusy) return; fpBusy = true; fb.disabled = true; err.hidden = true;
+    fpStop = typeof AbortController === 'function' ? new AbortController() : null;
+    const r = await PK.signIn(fpL, fpStop ? fpStop.signal : undefined);
+    fpBusy = false; fpStop = null; fb.disabled = false;
+    if (done || busy) return; /* somebody signed in with the PIN meanwhile */
     if (document.body.classList.contains('stale')) return;
-    if (!r.ok) { if (!r.cancelled) { err.textContent = r.msg; err.hidden = false; } if (r.code === 'PASSKEY_OFF' || r.code === 'PASSKEY_ROLE') { fb.remove(); } return; }
-    S.mobile = fpL.mobile; setSession(r); if (r.lists) S.lists = r.lists;
+    if (!r.ok) { if (!r.cancelled) { err.textContent = r.msg; err.hidden = false; } if (r.code === 'PASSKEY_OFF' || r.code === 'PASSKEY_ROLE' || r.code === 'PASSKEY_SHARED') { fb.remove(); } return; }
+    done = true; S.mobile = fpL.mobile; setSession(r); if (r.lists) S.lists = r.lists;
     if (r.mustChangePin) showChangePin(true); else enterApp();
   }
   async function submit() {
     if (busy) return; err.hidden = true; const bad = F.check(); if (bad) { err.textContent = bad; err.hidden = false; return; }
     busy = true; b.disabled = true; const v = F.get();
+    if (fpStop) { try { fpStop.abort(); } catch (e) { /* the prompt closes by itself */ } }
     const r = await api('auth.login', { mobile: v.mobile, pin: v.pin }, { noSession: true, noLock: true });
     busy = false; b.disabled = false;
     if (document.body.classList.contains('stale')) return;
     if (!r.ok) { err.textContent = r.msg; err.hidden = false; F.set('pin', ''); return; }
-    S.mobile = v.mobile; setSession(r); if (r.lists) S.lists = r.lists;
+    done = true; S.mobile = v.mobile; setSession(r); if (r.lists) S.lists = r.lists;
     if (r.mustChangePin) showChangePin(true); else enterApp();
   }
 }

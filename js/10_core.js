@@ -180,7 +180,7 @@ async function api(action, data, o) {
   if (PIN_FIRST[action] && !(data && data.pin !== undefined) && typeof pinPrompt === 'function') {
     let pin = _pinMemo && Date.now() - _pinMemo.at < 20000 ? _pinMemo.pin : await pinPrompt();
     if (!pin) return { ok: false, cancelled: true, code: 'CANCELLED', msg: T.pinCancelled };
-    _pinMemo = { pin, at: Date.now() }; data = Object.assign({}, data || {}, { pin });
+    _pinMemo = typeof PK === 'object' && PK.isToken(pin) ? null : { pin, at: Date.now() }; /* audit A-01: a fingerprint is for one action, it is never remembered for the next one */ data = Object.assign({}, data || {}, { pin });
     const r0 = await api(action, data, o); if (!r0.ok && r0.code === 'AUTH_PIN_WRONG') _pinMemo = null; return r0;
   }
   /* owner 27 Nov: a PIN box filled by the fingerprint sends the fingerprint (passkey) in place of the PIN */
